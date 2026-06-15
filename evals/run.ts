@@ -22,7 +22,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { buildGraph } from '../lib/graph';
 import { MemorySaver } from '@langchain/langgraph';
-import { summarizeUsage } from '../lib/llm';
+import { summarizeUsage, hasModelKey, MODEL_KEY_VAR, PROVIDER } from '../lib/llm';
 import { scoreDiagnosis, judgeAnswer, type GoldenExpected } from './score';
 import type { RoadmapItem, UsageEntry } from '../lib/types';
 
@@ -52,11 +52,11 @@ function loadCases(): Case[] {
   return JSON.parse(readFileSync(path.join(process.cwd(), 'evals', 'golden', 'cases.json'), 'utf8'));
 }
 
-async function runCase(c: Case, apiKey?: string): Promise<Fixture> {
+async function runCase(c: Case): Promise<Fixture> {
   const graph = buildGraph().compile({ checkpointer: new MemorySaver() });
   const final = await graph.invoke(
     { backlog: { company_context: 'eval', use_cases: [{ id: c.id, title: c.title, description: c.description }] } },
-    { configurable: { thread_id: `eval-${c.id}`, auto_approve: true, api_key: apiKey }, recursionLimit: 50 },
+    { configurable: { thread_id: `eval-${c.id}`, auto_approve: true }, recursionLimit: 50 },
   );
   const item = (final.items as RoadmapItem[])[0];
   const evidence = (final.evidence as { use_case_id: string; passages: { id: string; title: string; text: string }[] }[])
@@ -66,7 +66,7 @@ async function runCase(c: Case, apiKey?: string): Promise<Fixture> {
   const seen = new Set<string>();
   const groundedEvidence = evidence.filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
 
-  const judged = await judgeAnswer(item, groundedEvidence, apiKey);
+  const judged = await judgeAnswer(item, groundedEvidence);
 
   return {
     id: c.id,
@@ -185,9 +185,8 @@ async function main() {
     return;
   }
 
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    console.error('Live/record runs need GOOGLE_API_KEY. For a zero-key gate use: npx tsx evals/run.ts --replay');
+  if (!hasModelKey()) {
+    console.error(`Live/record runs need ${MODEL_KEY_VAR} (LLM_PROVIDER=${PROVIDER}). For a zero-key gate use: npx tsx evals/run.ts --replay`);
     process.exit(1);
   }
   const cases = loadCases();
@@ -196,7 +195,7 @@ async function main() {
   for (const c of cases) {
     process.stdout.write(`  ${c.id} ... `);
     try {
-      const f = await runCase(c, apiKey);
+      const f = await runCase(c);
       const s = scoreDiagnosis(f.got as never, f.expected);
       process.stdout.write(`${s.ai_or_not_match ? '✓' : '✗'}aon ${s.risk_match ? '✓' : '✗'}risk ${f.answer_verdict.verdict === 'pass' ? '✓' : '✗'}ans\n`);
       fixtures.push(f);

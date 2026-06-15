@@ -80,10 +80,14 @@ npm run evals:retrieval   # BM25 retrieval scorecard (the CI gate)
 npm run evals:probes      # input-rail + structural-containment security gate
 npm run evals -- --replay # replay gate (no-op until you record fixtures)
 
-# Full pipeline (free Google AI Studio key):
-cp .env.example .env      # add GOOGLE_API_KEY
-npm run ingest:embed      # one-off: static dense embeddings (costs a fraction of a cent)
+# Full pipeline — pick a reasoning provider (Anthropic is the default):
+cp .env.example .env      # add ANTHROPIC_API_KEY (LLM_PROVIDER=anthropic, the default)
+                          #   ...or set LLM_PROVIDER=google + GOOGLE_API_KEY
 npm run dev               # http://localhost:3000
+
+# Dense/hybrid retrieval is OPTIONAL and Google-only (Anthropic has no embeddings
+# API). With a GOOGLE_API_KEY, enable it once; without one, retrieval is BM25-only:
+npm run ingest:embed      # one-off: static dense embeddings (costs a fraction of a cent)
 
 # Reproduce / publish the numbers:
 npm run evals -- --record && npm run evals:retrieval && npm run evals:probes
@@ -102,7 +106,7 @@ Optional: set `DATABASE_URL` (Neon/Supabase free tier) to make the approval gate
 | The write | **Single-threaded `commit_roadmap`, outside the loop, behind a durable gate** | The write as a tool the agent can call (breaks lethal-trifecta containment); an in-memory approval prompt (dies with the process, no audit). Flips never — this is the architecture, not a TODO. |
 | Retrieval | **Hybrid (BM25 + dense, RRF)** over a clean-room pattern corpus, measured | Dense-only (flips if the scorecard shows BM25 net-negative *here*, as it did for the sibling repo); GraphRAG (flips for multi-hop, with the token-cost caveat said in the same breath). |
 | HITL | **`interrupt()` + Postgres checkpointer**: durable pause, approve later, audit artifact | An in-process prompt with a timeout. Dies with the process and a silent timeout manufactures false confidence. |
-| Models | **Tiered Gemini**: Flash routes/diagnoses/prices/judges, Pro architects/critiques; temperature 0 on eval-asserted paths | One frontier model everywhere (2–4× the cost for no measured gain on routing); fine-tuning (the knowledge is in the corpus, and the corpus changes by re-ingest, not retraining). |
+| Models | **Provider-agnostic + tiered** (`LLM_PROVIDER`): Anthropic (Haiku 4.5 fast / Sonnet 4.6 deep) or Gemini (Flash / Pro). Cheap tier routes/diagnoses/prices/judges; deep tier architects/critiques. temperature 0 on eval-asserted paths | One frontier model everywhere (2–4× the cost for no measured gain on routing); fine-tuning (the knowledge is in the corpus, and the corpus changes by re-ingest, not retraining). The reasoning provider and the embeddings provider are decoupled — only Google offers embeddings, so dense retrieval is Google-only; Anthropic-only runs degrade to BM25 (measured at 69.2%). |
 | Hosting | **Vercel free tier**, SSE streaming, checkpoint-resume across invocations | A persistent VPS. The free-tier constraint forces the durable-checkpoint design to be real instead of decorative. |
 | Evals | **Golden set + per-component scorers in CI** (retrieval recall, classification match, autonomy-ceiling, injection probes) | LLM-as-judge for the headline numbers — judges drift and flatter; every *gated* metric here is deterministic. The answer-judge is reported, labelled as judged. |
 

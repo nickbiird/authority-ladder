@@ -164,17 +164,15 @@ async function supervise(state: S): Promise<Partial<S>> {
   return { routes, usage: [usage], cursor: 0 };
 }
 
-async function diagnose(uc: UseCase, masked: string, apiKey?: string) {
+async function diagnose(uc: UseCase, masked: string) {
   const ret = await retrieve(`${uc.title}. ${masked}`, {
     categories: ['ai-or-not', 'autonomy-ladder', 'governance'],
     k: 5,
-    apiKey,
   });
   const passages = toPassages(ret);
   const { value, usage } = await structuredCall({
     model: 'fast',
     node: 'diagnose',
-    apiKey,
     schema: Diagnosis,
     system:
       'You are the Diagnostician. Using ONLY the retrieved patterns as your rubric, decide for this use case: ' +
@@ -188,17 +186,15 @@ async function diagnose(uc: UseCase, masked: string, apiKey?: string) {
   return { diagnosis: value, usage, evidence: { stage: 'diagnose' as const, passages, doc_ids: passages.map((p) => p.id) } };
 }
 
-async function architect(uc: UseCase, masked: string, d: Diagnosis, apiKey?: string) {
+async function architect(uc: UseCase, masked: string, d: Diagnosis) {
   const ret = await retrieve(`${uc.title}. ${masked}. verdict ${d.ai_or_not} tier ${d.autonomy_tier}`, {
     categories: ['architecture'],
     k: 4,
-    apiKey,
   });
   const passages = toPassages(ret);
   const { value, usage } = await structuredCall({
     model: 'deep',
     node: 'architect',
-    apiKey,
     schema: Architecture,
     system:
       'You are the Architect. Propose a defended reference architecture for this use case, grounded ONLY in the retrieved architecture patterns. ' +
@@ -210,17 +206,15 @@ async function architect(uc: UseCase, masked: string, d: Diagnosis, apiKey?: str
   return { architecture: value, usage, evidence: { stage: 'architect' as const, passages, doc_ids: passages.map((p) => p.id) } };
 }
 
-async function economist(uc: UseCase, masked: string, d: Diagnosis, apiKey?: string) {
+async function economist(uc: UseCase, masked: string, d: Diagnosis) {
   const ret = await retrieve(`${uc.title}. ${masked}. adoption ROI cost per task scale or stall`, {
     categories: ['architecture', 'adoption-failure'],
     k: 4,
-    apiKey,
   });
   const passages = toPassages(ret);
   const { value, usage } = await structuredCall({
     model: 'fast',
     node: 'economist',
-    apiKey,
     schema: Economics,
     system:
       'You are the Economist. Translate this use case into the CFO view, grounded ONLY in the retrieved patterns. ' +
@@ -238,12 +232,10 @@ async function critique(
   a: Architecture | null,
   e: Economics,
   groundedPassages: { id: string; title: string; text: string }[],
-  apiKey?: string,
 ) {
   const { value, usage } = await structuredCall({
     model: 'deep',
     node: 'critique',
-    apiKey,
     schema: CriticVerdict,
     system:
       'You are an adversarial reviewer. Try to REFUTE this triage verdict from the EVIDENCE BELOW — the exact patterns the specialists retrieved — not from a fresh search and not from your own priors. ' +
@@ -278,8 +270,7 @@ function sequence(d: Diagnosis): { sequencing: typeof Sequencing._type; rational
  * the UI can stream per-item progress, then advances the cursor. Specialists run
  * concurrently (read-side only) within the item.
  */
-async function triageOne(state: S, config?: RunnableConfig): Promise<Partial<S>> {
-  const apiKey = config?.configurable?.api_key as string | undefined;
+async function triageOne(state: S): Promise<Partial<S>> {
   const i = state.cursor;
   const uc = state.backlog.use_cases[i];
   const route = state.routes.find((r) => r.use_case_id === uc.id)!;
@@ -295,7 +286,7 @@ async function triageOne(state: S, config?: RunnableConfig): Promise<Partial<S>>
   const evidence: EvidenceEntry[] = [];
 
   // 1) Diagnose (always).
-  const dRes = await diagnose(uc, masked, apiKey);
+  const dRes = await diagnose(uc, masked);
   let d = dRes.diagnosis;
   usage.push(dRes.usage);
   evidence.push({ use_case_id: uc.id, ...dRes.evidence });
@@ -314,14 +305,14 @@ async function triageOne(state: S, config?: RunnableConfig): Promise<Partial<S>>
   // 2) Architect (only for genuine AI use cases on the full route).
   let architecture: Architecture | null = null;
   if (route.route === 'full' && d.ai_or_not !== 'none') {
-    const aRes = await architect(uc, masked, d, apiKey);
+    const aRes = await architect(uc, masked, d);
     architecture = aRes.architecture;
     usage.push(aRes.usage);
     evidence.push({ use_case_id: uc.id, ...aRes.evidence });
   }
 
   // 3) Economist (always — even a "none" verdict has a cost story: the cheap alternative).
-  const eRes = await economist(uc, masked, d, apiKey);
+  const eRes = await economist(uc, masked, d);
   let economics = eRes.economics;
   usage.push(eRes.usage);
   evidence.push({ use_case_id: uc.id, ...eRes.evidence });
@@ -330,26 +321,26 @@ async function triageOne(state: S, config?: RunnableConfig): Promise<Partial<S>>
   const grounded = [uc.id]
     .flatMap(() => evidence.filter((ev) => ev.use_case_id === uc.id))
     .flatMap((ev) => ev.passages);
-  let verdict = await critique(uc, d, architecture, economics, grounded, apiKey);
+  let verdict = await critique(uc, d, architecture, economics, grounded);
   usage.push(verdict.usage);
   let rounds = 1;
 
   if (verdict.verdict.verdict === 'revise') {
     // One grounded revision: re-run the targeted specialist(s), then re-judge once.
     if (verdict.verdict.targets.includes('architecture') && architecture) {
-      const aRes = await architect(uc, masked, d, apiKey);
+      const aRes = await architect(uc, masked, d);
       architecture = aRes.architecture;
       usage.push(aRes.usage);
       evidence.push({ use_case_id: uc.id, ...aRes.evidence });
     }
     if (verdict.verdict.targets.includes('economics')) {
-      const eRes = await economist(uc, masked, d, apiKey);
+      const eRes = await economist(uc, masked, d);
       economics = eRes.economics;
       usage.push(eRes.usage);
       evidence.push({ use_case_id: uc.id, ...eRes.evidence });
     }
     const grounded2 = evidence.filter((ev) => ev.use_case_id === uc.id).flatMap((ev) => ev.passages);
-    verdict = await critique(uc, d, architecture, economics, grounded2, apiKey);
+    verdict = await critique(uc, d, architecture, economics, grounded2);
     usage.push(verdict.usage);
     rounds = 2;
   }

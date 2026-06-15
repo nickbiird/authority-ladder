@@ -4,14 +4,15 @@ import { getCheckpointer } from '@/lib/checkpointer';
 import { checkRateLimit } from '@/lib/ratelimit';
 import { sseResponse } from '@/lib/stream';
 import { Backlog } from '@/lib/types';
+import { hasModelKey, MODEL_KEY_VAR, PROVIDER } from '@/lib/llm';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  if (!process.env.GOOGLE_API_KEY) {
+  if (!hasModelKey()) {
     return Response.json(
-      { error: 'GOOGLE_API_KEY is not configured on this deployment. Clone the repo and run it with your own key — see README.' },
+      { error: `${MODEL_KEY_VAR} is not configured on this deployment (LLM_PROVIDER=${PROVIDER}). Clone the repo and run it with your own key — see README.` },
       { status: 503 },
     );
   }
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
     () =>
       graph.stream(
         { backlog: parsed.data, hitlMode: mode },
-        { configurable: { thread_id: threadId, api_key: process.env.GOOGLE_API_KEY }, streamMode: 'updates', recursionLimit: 100 },
+        { configurable: { thread_id: threadId }, streamMode: 'updates', recursionLimit: 100 },
       ) as unknown as Promise<AsyncIterable<Record<string, unknown>>>,
   );
 }

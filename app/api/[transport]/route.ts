@@ -20,6 +20,7 @@ import { loadCorpus, getDoc } from '@/lib/corpus';
 import { buildGraph } from '@/lib/graph';
 import { MemorySaver } from '@langchain/langgraph';
 import { autonomyCeiling, RISK_OBLIGATIONS, AUTONOMY_GATE } from '@/lib/ladder';
+import { hasModelKey, MODEL_KEY_VAR, PROVIDER } from '@/lib/llm';
 import type { RoadmapItem } from '@/lib/types';
 
 export const maxDuration = 60;
@@ -70,11 +71,11 @@ const handler = createMcpHandler(
         description: z.string().min(15).max(4000).describe('plain-language description of the candidate AI use case'),
       },
       async ({ title, description }) => {
-        if (!process.env.GOOGLE_API_KEY) return text({ error: 'GOOGLE_API_KEY not configured on this deployment.' });
+        if (!hasModelKey()) return text({ error: `${MODEL_KEY_VAR} not configured on this deployment (LLM_PROVIDER=${PROVIDER}).` });
         const graph = buildGraph().compile({ checkpointer: new MemorySaver() });
         const out = await graph.invoke(
           { backlog: { company_context: 'mcp', use_cases: [{ id: 'mcp-1', title, description }] }, hitlMode: 'memory' },
-          { configurable: { thread_id: crypto.randomUUID(), auto_approve: true, api_key: process.env.GOOGLE_API_KEY }, recursionLimit: 50 },
+          { configurable: { thread_id: crypto.randomUUID(), auto_approve: true }, recursionLimit: 50 },
         );
         if (out.guardFail) return text({ rejected: out.guardFail });
         const item = (out.items as RoadmapItem[])[0];

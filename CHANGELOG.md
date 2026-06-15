@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-06-15 — provider-agnostic reasoning (Anthropic default)
+
+Made the reasoning layer provider-agnostic so the repo runs on a Claude Console
+key (the owner's Gemini key's prepaid balance was exhausted; Anthropic also has
+no embeddings dependency).
+
+- `lib/llm.ts`: `LLM_PROVIDER` (`anthropic` default | `google`) selects the
+  backend. Anthropic tiers Haiku 4.5 (fast) / Sonnet 4.6 (deep) — cheap by design;
+  Google tiers Flash / Pro. `structuredCall` is unchanged at the call site, so the
+  graph and evals don't branch on provider. The SDKs read their key from the env
+  (`ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`); the explicit `api_key` threading through
+  the graph config was removed.
+- **Embeddings stay decoupled:** only Google offers an embeddings API, so dense
+  retrieval needs `GOOGLE_API_KEY` regardless of the reasoning provider; without
+  one, retrieval is BM25-only (the just-added degradation handles it). The
+  committed hybrid retrieval scorecard (71.8%) still stands — embeddings are Google.
+- Routes, evals, and the MCP server now report the active provider's key var in
+  their "key not configured" errors.
+
+Verified offline (no key): typecheck clean, tests 20/20, security probes 10/10,
+`next build` green, and a stubbed end-to-end run (pause/resume, autonomy clamp,
+not-AI path) confirms the refactor didn't break the graph. The live Anthropic
+classification scorecard is the owner's next step — set `ANTHROPIC_API_KEY` and
+`npm run evals -- --record`.
+
 ## 2026-06-15 — live-API hardening + retrieval recorded
 
 Took the build to the live Gemini API. The first `--record` attempt surfaced two real, fixed issues, and recorded the full retrieval scorecard before the key's credit ran out.

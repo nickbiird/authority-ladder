@@ -1,35 +1,51 @@
 /**
- * Gemini model layer with a per-run cost meter.
+ * Provider-agnostic model layer with a per-run cost meter.
  *
- * Tiering rule (design contract: tiered models): the fast tier (Flash class)
- * routes, diagnoses, prices, and judges; the deep tier (Pro class) does the two
- * calls where design judgment lives — the architect (synthesises the defended
- * architecture) and the critic (tries to refute it). Model strings are env vars
- * on purpose: when a new family ships, migration is one variable.
+ * LLM_PROVIDER selects the reasoning backend — `anthropic` (default) or `google`.
+ * The two specialists' tiers map across providers:
+ *   fast  (routing / diagnosis / pricing / judging)  -> Haiku 4.5  | Gemini Flash
+ *   deep  (architecture synthesis / adversarial critique) -> Sonnet 4.6 | Gemini Pro
+ * Model strings are env vars, so a swap is one variable. temperature 0 on every
+ * eval-asserted path keeps results reproducible.
  *
- * Temperature is 0 on every eval-asserted path. Tested paths must be
- * reproducible; creativity is a liability here, not a feature.
+ * Embeddings are a SEPARATE concern (lib/retrieval.ts): only Google offers an
+ * embeddings API, so dense retrieval needs a GOOGLE_API_KEY. With the Anthropic
+ * provider and no Google key, retrieval degrades to BM25-only — a measured,
+ * supported path (69.2% recall@5). The reasoning provider and the embeddings
+ * provider are independent.
  */
+import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import type { z } from 'zod';
 import type { UsageEntry, CostSummary } from './types';
 
-export const FAST_MODEL = process.env.GEMINI_MODEL_FAST ?? 'gemini-2.5-flash';
-export const DEEP_MODEL = process.env.GEMINI_MODEL_DEEP ?? 'gemini-2.5-pro';
+export type Provider = 'anthropic' | 'google';
+export const PROVIDER: Provider = (process.env.LLM_PROVIDER ?? 'anthropic').toLowerCase() === 'google' ? 'google' : 'anthropic';
+
+const ANTHROPIC_FAST = process.env.ANTHROPIC_MODEL_FAST ?? 'claude-haiku-4-5';
+const ANTHROPIC_DEEP = process.env.ANTHROPIC_MODEL_DEEP ?? 'claude-sonnet-4-6';
+const GEMINI_FAST = process.env.GEMINI_MODEL_FAST ?? 'gemini-2.5-flash';
+const GEMINI_DEEP = process.env.GEMINI_MODEL_DEEP ?? 'gemini-2.5-pro';
+
+export const FAST_MODEL = PROVIDER === 'google' ? GEMINI_FAST : ANTHROPIC_FAST;
+export const DEEP_MODEL = PROVIDER === 'google' ? GEMINI_DEEP : ANTHROPIC_DEEP;
 
 /**
- * USD per 1M tokens (Gemini API list prices, mid-2026 — verify against
- * ai.google.dev/pricing when models change; prices are part of the eval
- * artifact, so a stale price is a reportable bug, not a rounding detail).
+ * USD per 1M tokens (provider list prices, mid-2026 — verify before quoting a
+ * euro figure; prices are part of the eval artifact, so a stale price is a
+ * reportable bug). Anthropic: platform.claude.com/docs pricing. Google: ai.google.dev/pricing.
  */
 const PRICE_PER_M: Record<string, { in: number; out: number }> = {
+  'claude-haiku-4-5': { in: 1.0, out: 5.0 },
+  'claude-sonnet-4-6': { in: 3.0, out: 15.0 },
+  'claude-opus-4-8': { in: 5.0, out: 25.0 },
   'gemini-2.5-flash': { in: 0.3, out: 2.5 },
   'gemini-2.5-pro': { in: 1.25, out: 10 },
 };
 const USD_TO_EUR = 0.92; // fixed conversion, documented in the trust report
 
 export function priceCall(model: string, inputTokens: number, outputTokens: number): number {
-  const p = PRICE_PER_M[model] ?? PRICE_PER_M['gemini-2.5-pro']; // unknown model -> price conservatively
+  const p = PRICE_PER_M[model] ?? PRICE_PER_M['claude-sonnet-4-6']; // unknown model -> price conservatively (deep tier)
   return ((inputTokens * p.in + outputTokens * p.out) / 1_000_000) * USD_TO_EUR;
 }
 
@@ -40,24 +56,32 @@ export function summarizeUsage(entries: UsageEntry[]): CostSummary {
   return { calls: entries.length, inputTokens, outputTokens, eur: Number(eur.toFixed(6)) };
 }
 
-function makeModel(model: string, apiKey?: string) {
-  const key = apiKey ?? process.env.GOOGLE_API_KEY;
-  if (!key) {
-    // Fail loud and early: the reasoning path needs a key. Retrieval, the input
-    // gate, and the deterministic evals do NOT — so the offline tests never hit this.
+/** The env var the active provider needs for the reasoning calls. */
+export const MODEL_KEY_VAR = PROVIDER === 'google' ? 'GOOGLE_API_KEY' : 'ANTHROPIC_API_KEY';
+export const hasModelKey = (): boolean => Boolean(process.env[MODEL_KEY_VAR]);
+
+function makeModel(model: string) {
+  // Both SDKs read their key from the environment (GOOGLE_API_KEY / ANTHROPIC_API_KEY),
+  // so we don't pass it explicitly — we only assert presence with a clear error.
+  if (!hasModelKey()) {
     throw new Error(
-      'GOOGLE_API_KEY is not set. The reasoning specialists (diagnose/architect/economist/critic) require it. ' +
-        'Retrieval, the input gate, and `npm test` / `npm run evals:retrieval` run with no key.',
+      `${MODEL_KEY_VAR} is not set. The reasoning specialists require it (LLM_PROVIDER=${PROVIDER}). ` +
+        'Retrieval, the input gate, and the deterministic gates (npm test / evals:retrieval / evals:probes) run with no key.',
     );
   }
-  // maxRetries cushions free-tier 429s on the generation calls (the embed query
-  // has its own backoff in retrieval.ts); temperature 0 keeps eval paths reproducible.
-  return new ChatGoogleGenerativeAI({ model, temperature: 0, apiKey: key, maxRetries: 6 });
+  if (PROVIDER === 'google') {
+    return new ChatGoogleGenerativeAI({ model, temperature: 0, maxRetries: 6 });
+  }
+  // Anthropic. temperature 0 is accepted on Haiku 4.5 / Sonnet 4.6 (the defaults);
+  // if you set ANTHROPIC_MODEL_DEEP to Opus 4.7+/Fable, drop temperature (those reject it).
+  return new ChatAnthropic({ model, temperature: 0, maxRetries: 6 });
 }
 
 /**
  * One structured call: returns the Zod-validated object plus a usage entry.
- * includeRaw keeps the AIMessage so token counts survive structured parsing.
+ * includeRaw keeps the chat message so token counts survive structured parsing.
+ * The shape (`{parsed, raw}` + `raw.usage_metadata`) is identical across both
+ * providers, so callers are provider-agnostic.
  */
 export async function structuredCall<T extends z.ZodTypeAny>(opts: {
   model: 'fast' | 'deep';
@@ -65,12 +89,9 @@ export async function structuredCall<T extends z.ZodTypeAny>(opts: {
   schema: T;
   system: string;
   user: string;
-  apiKey?: string;
 }): Promise<{ value: z.infer<T>; usage: UsageEntry }> {
   const modelName = opts.model === 'fast' ? FAST_MODEL : DEEP_MODEL;
-  const llm = makeModel(modelName, opts.apiKey).withStructuredOutput(opts.schema, {
-    includeRaw: true,
-  });
+  const llm = makeModel(modelName).withStructuredOutput(opts.schema, { includeRaw: true });
   const res = (await llm.invoke([
     ['system', opts.system],
     ['human', opts.user],

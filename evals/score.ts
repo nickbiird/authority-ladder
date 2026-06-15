@@ -57,7 +57,6 @@ export type AnswerVerdict = z.infer<typeof AnswerVerdict>;
 export async function judgeAnswer(
   item: RoadmapItem,
   evidencePassages: { id: string; title: string; text: string }[],
-  apiKey?: string,
 ) {
   const ev = evidencePassages.length
     ? evidencePassages.map((p) => `=== [${p.id}] ${p.title} ===\n${p.text}`).join('\n\n')
@@ -65,7 +64,6 @@ export async function judgeAnswer(
   const { value, usage } = await structuredCall({
     model: 'deep',
     node: 'eval_judge',
-    apiKey,
     schema: AnswerVerdict,
     system:
       'You are grading one triage verdict. Ground ONLY on the EVIDENCE below — the patterns the specialists actually retrieved — not a fresh search or your own priors. ' +

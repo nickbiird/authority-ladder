@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     () =>
       graph.stream(
         new Command({ resume: { approved: body.approved, note: body.note ?? '' } }),
-        { configurable: { thread_id: body.threadId, api_key: process.env.GOOGLE_API_KEY }, streamMode: 'updates', recursionLimit: 100 },
+        { configurable: { thread_id: body.threadId }, streamMode: 'updates', recursionLimit: 100 },
       ) as unknown as Promise<AsyncIterable<Record<string, unknown>>>,
   );
 }

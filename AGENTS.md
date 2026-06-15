@@ -21,7 +21,7 @@ You are picking up a multi-agent, write-enabled triage system built on LangGraph
 
 ## Seams (these ARE meant to be swapped)
 - **Corpus:** `data/patterns/*.json` (authored `PatternCard`s) → `npm run ingest` → `data/corpus.json`. Add/edit cards, re-ingest, re-embed. Don't edit `corpus.json` by hand (CI checks it's fresh).
-- **Models:** `GEMINI_MODEL_FAST` / `GEMINI_MODEL_DEEP` / `GEMINI_EMBED_MODEL` in `.env`. One variable each.
+- **Reasoning provider:** `LLM_PROVIDER` (`anthropic` default | `google`) in `lib/llm.ts`. Anthropic tiers = `ANTHROPIC_MODEL_FAST`/`_DEEP` (Haiku 4.5 / Sonnet 4.6); Google tiers = `GEMINI_MODEL_FAST`/`_DEEP`. The SDKs read their key from the env (`ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`) — `structuredCall` is provider-agnostic, so graph/eval code never branches on provider. **Embeddings are decoupled:** only Google has an embeddings API, so dense retrieval needs `GOOGLE_API_KEY` regardless of `LLM_PROVIDER`; without it, retrieval is BM25-only (the degradation handles this).
 - **Retrieval default:** `lib/retrieval.ts` — the default mode is `hybrid`; the scorecard decides whether to keep it. If `dense-only` wins on this corpus, flip the default and keep `hybrid` as a measured config (don't delete the trade-off).
 - **Checkpointer:** env-gated via `getCheckpointer()` (`DATABASE_URL` set → `PostgresSaver`, else `MemorySaver`). The factory degrades safely.
 - **Golden set:** `evals/golden/cases.json` + `RUBRIC.md`. Harden the DATA when accuracy is suspiciously high; never write unfair questions to hit a number.
