@@ -44,25 +44,40 @@ function bm25Index(): MiniSearch<CorpusDoc> {
   return mini;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function embedQuery(query: string, apiKey: string, dims: number): Promise<Float32Array> {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: `models/${EMBED_MODEL}`,
-        content: { parts: [{ text: query }] },
-        taskType: 'RETRIEVAL_QUERY',
-        outputDimensionality: dims || 768,
-      }),
-    },
-  );
-  if (!res.ok) throw new Error(`query embed HTTP ${res.status}`);
-  const json = (await res.json()) as { embedding: { values: number[] } };
-  const v = json.embedding.values;
-  const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
-  return new Float32Array(v.map((x) => x / norm));
+  // The embed endpoint is a raw fetch (the generation calls retry via langchain),
+  // so it gets its own backoff: free-tier RPM throttling returns 429, and a
+  // 24-case eval makes enough query-embeds to trip it. Honour Retry-After,
+  // otherwise exponential backoff. 5 attempts clears the per-minute window.
+  const MAX = 5;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: `models/${EMBED_MODEL}`,
+          content: { parts: [{ text: query }] },
+          taskType: 'RETRIEVAL_QUERY',
+          outputDimensionality: dims || 768,
+        }),
+      },
+    );
+    if (res.ok) {
+      const json = (await res.json()) as { embedding: { values: number[] } };
+      const v = json.embedding.values;
+      const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
+      return new Float32Array(v.map((x) => x / norm));
+    }
+    const retriable = res.status === 429 || res.status >= 500;
+    if (!retriable || attempt >= MAX) throw new Error(`query embed HTTP ${res.status}`);
+    const retryAfter = Number(res.headers.get('retry-after'));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.min(2000 * 2 ** attempt, 32000);
+    await sleep(waitMs);
+  }
 }
 
 function dot(a: Float32Array, b: Float32Array): number {

@@ -29,7 +29,7 @@ interface RoadmapItem {
     rejected_alternatives: { alternative: string; flip_condition: string }[];
     key_number: string;
   } | null;
-  economics: { cost_per_task_eur: number | null; cost_basis: string; human_baseline: string; payback: string; latency_budget: string };
+  economics: { cost_per_task_eur?: number | null; cost_basis: string; human_baseline: string; payback: string; latency_budget: string };
   critique: { rounds: number; final: { verdict: string; critique: string } };
   sequencing: Seq;
   sequencing_rationale: string;

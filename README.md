@@ -56,9 +56,17 @@ Every number is read from a committed artifact in `evals/results/`, regenerated 
 
 The golden set is **24 labelled use cases**, split on purpose: **16 core** (labels fall near-deterministically out of the AI-or-not gate and the AI Act tier families) and **8 contested** (Article 6(3) derogation edges, the act/act-with-approval boundary, the RAG-vs-long-context line), labelled against a published rubric ([`evals/golden/RUBRIC.md`](evals/golden/RUBRIC.md)). Accuracy is reported **per split** because they mean different things: core measures the system; contested measures agreement with one documented reading of genuinely arguable text. Conflating those two numbers is how a transformation demo lies.
 
-One measured result worth calling out up front: **BM25-only retrieval scores 69.2% recall@5 (MRR 0.842)** on the golden set — committed, deterministic, no API key. That is the honest retrieval baseline the dense and hybrid legs are measured against; the default leg is the *measured* winner, not an assumed one.
+The measured **retrieval scorecard** (committed, all three legs):
 
-> The per-use-case **classification accuracy** and **cost** rows populate after one recorded run with your own key (`npm run evals -- --record`) — they are model-dependent, so they are not faked here. The deterministic gates (retrieval, security probes, the autonomy-ceiling safety property) ship green.
+| Config | Recall@5 | MRR |
+|---|---|---|
+| bm25-only (the no-key CI gate) | 69.2% | 0.842 |
+| dense-only | 66.7% | 0.668 |
+| **hybrid (the live default)** | **71.8%** | **0.847** |
+
+Hybrid is the *measured* winner, not an assumed one — pattern names are terms-of-art (BM25 territory), use-case descriptions are paraphrase (dense territory), and fusing genuinely helps on this corpus. (On the sibling `ai-act-triage`'s corpus the same scorecard showed dense winning and the default flipped — the point is the measurement decides, not the belief.)
+
+> The per-use-case **classification accuracy** and **cost** rows are recorded by `npm run evals -- --record` with a key that has credit — they are model-dependent, so they are not faked here, and the eval records partial progress honestly if a run is interrupted. The deterministic gates (retrieval, security probes 10/10, the autonomy-ceiling safety property) and the full retrieval scorecard above ship green.
 
 ## Run it
 

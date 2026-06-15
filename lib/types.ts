@@ -163,10 +163,16 @@ export const Architecture = z.object({
 });
 export type Architecture = z.infer<typeof Architecture>;
 
-/** Economist — the CFO translation. Costs are model-estimated; the UI brackets them. */
+/**
+ * Economist — the CFO translation. Costs are model-estimated; the UI brackets them.
+ * `cost_per_task_eur` is `.optional()` rather than `.nullable()` on purpose: the
+ * Gemini `response_schema` proto rejects a list-valued `type` (what `.nullable()`
+ * compiles to), so an absent estimate is `undefined`, handled as "no estimate"
+ * everywhere via `?? ` / `!= null`.
+ */
 export const Economics = z.object({
   use_case_id: z.string(),
-  cost_per_task_eur: z.number().nullable(),
+  cost_per_task_eur: z.number().optional(),
   cost_basis: z.string(),
   human_baseline: z.string(),
   payback: z.string(),

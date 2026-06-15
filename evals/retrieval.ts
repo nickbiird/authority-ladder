@@ -11,6 +11,7 @@
  * Why this exists: a perfect generator over the wrong patterns gives a wrong
  * verdict. Retrieval quality caps triage quality, so it is measured first.
  */
+import '../lib/loadenv';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { retrieve, type RetrievalMode } from '../lib/retrieval';
@@ -71,12 +72,19 @@ async function main() {
   const scores: ConfigScore[] = [];
   // bm25-only: always runs (deterministic, no key) — the CI gate.
   scores.push(await scoreConfig('bm25-only', cases));
-  // dense-only / hybrid: only when embeddings + key are present.
+  // dense-only / hybrid: only when embeddings + key are present, and only if the
+  // key actually works — a present-but-dead key (no credit) should degrade these
+  // legs to "skipped (reason)", never crash the whole scorecard or wipe the BM25 gate.
   for (const mode of ['dense-only', 'hybrid'] as RetrievalMode[]) {
-    if (haveDense) {
-      scores.push(await scoreConfig(mode, cases));
-    } else {
+    if (!haveDense) {
       scores.push({ config: mode, queries: 0, recall_at_5: 0, mrr: 0, skipped: 'no embeddings or no GOOGLE_API_KEY' });
+      continue;
+    }
+    try {
+      scores.push(await scoreConfig(mode, cases));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      scores.push({ config: mode, queries: 0, recall_at_5: 0, mrr: 0, skipped: `embed call failed (${msg.slice(0, 60)})` });
     }
   }
 

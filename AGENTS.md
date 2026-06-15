@@ -26,18 +26,19 @@ You are picking up a multi-agent, write-enabled triage system built on LangGraph
 - **Checkpointer:** env-gated via `getCheckpointer()` (`DATABASE_URL` set → `PostgresSaver`, else `MemorySaver`). The factory degrades safely.
 - **Golden set:** `evals/golden/cases.json` + `RUBRIC.md`. Harden the DATA when accuracy is suspiciously high; never write unfair questions to hit a number.
 
-## Current state (2026-06-15, initial build)
+## Current state (2026-06-15)
 - **Compiles + typechecks clean; `next build` green** (6 pages, 3 API routes incl. the MCP server).
-- **Offline tests 20/20**, retrieval scorecard committed (**BM25 69.2% recall@5, MRR 0.842** over 24 cases — the deterministic baseline), **security probes 10/10** (incl. the compiled-graph containment assertion).
-- **Runtime loop validated end-to-end with stubbed models** (no key): the self-loop triages the whole backlog, pauses at the durable gate, resumes and commits; the autonomy clamp fires (agent + high cost-of-error → `act_with_approval`); the not-AI path routes to `do_not_build` with a null architecture.
-- **The model-dependent numbers are NOT recorded yet** — no API key was used in this build (clean-room: the sibling repo's key was deliberately not borrowed). The owner runs `npm run evals -- --record` with their own key to populate the classification + cost rows and activate the replay gate. This is the honest boundary, stated in the README, not a hidden gap.
+- **Offline tests 20/20**, **security probes 10/10** (incl. the compiled-graph containment assertion).
+- **Retrieval scorecard fully recorded (all three legs, committed):** bm25-only 69.2% / dense-only 66.7% / **hybrid 71.8% recall@5 (MRR 0.847)** over 24 cases. Hybrid is the measured winner here — embeddings (`data/embeddings.json`, 29 vectors) are committed so dense/hybrid work on a clone + key.
+- **Runtime loop validated end-to-end with stubbed models**: the self-loop triages the whole backlog, pauses at the durable gate, resumes and commits; the autonomy clamp fires (agent + high cost-of-error → `act_with_approval`); the not-AI path routes to `do_not_build` with a null architecture.
+- **The schema layer is verified against the live Gemini API** (the first `--record` attempt surfaced two real issues, both fixed): (a) Gemini's `response_schema` rejects `.nullable()` (list-valued `type`) → `Economics.cost_per_task_eur` is now `.optional()`; (b) the embed endpoint needed its own 429 backoff (`lib/retrieval.ts`) + `maxRetries` on the generation model (`lib/llm.ts`); (c) standalone scripts/evals now load `.env` via `lib/loadenv.ts` (Node's built-in `loadEnvFile`).
+- **The classification + cost rows are NOT recorded yet** — the available API key's prepayment credit was depleted partway through the first real run (it got through core-01..04 cleanly, proving the pipeline works, then 429'd on credit). The eval now records partial progress honestly and stops early on a credit/quota error (`evals/run.ts`), so the next attempt with a topped-up key keeps what it gets. This is the one open item, stated in the README, not a hidden gap.
 
 ## High-value next steps (in priority order, if asked to extend)
-1. **Record the assessment fixtures** (`GOOGLE_API_KEY=… npm run evals -- --record`) — this is the one thing standing between the repo and a complete eval scorecard. Then `npm run trust-report` and commit the artifacts.
-2. **Embed the corpus** (`npm run ingest:embed`) and re-run `npm run evals:retrieval` to populate the dense/hybrid rows and confirm (or flip) the hybrid default with a real measurement.
-3. **Verify the Postgres durable-gate path live** — the seam is wired and env-gated but unexercised against a real DB; stand one up, run the pause/restart/resume cycle, capture it.
-4. **Token-streaming the architect's prose** (`astream_events`) — deferred; node-level SSE already gives the live per-item stepper.
-5. **A real cross-encoder reranker** after RRF once a model is installable, for a larger corpus.
+1. **Record the assessment fixtures** with a key that has credit: `npm run evals -- --record` → `npm run trust-report` → commit. This is the one thing between the repo and a complete scorecard. The pipeline + schemas are already proven live (4 cases ran clean before the credit ran out); this just needs credit.
+2. **Verify the Postgres durable-gate path live** — the seam is wired and env-gated but unexercised against a real DB; stand one up, run the pause/restart/resume cycle, capture it.
+3. **Token-streaming the architect's prose** (`astream_events`) — deferred; node-level SSE already gives the live per-item stepper.
+4. **A real cross-encoder reranker** after RRF once a model is installable, for a larger corpus.
 
 ## Validation
 - `npm run typecheck` — types.

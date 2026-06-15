@@ -36,7 +36,10 @@ function main() {
   lines.push('## Classification accuracy');
   lines.push('');
   if (assessment) {
-    lines.push(`Run ${assessment.run_at} · ${assessment.n} cases · split core/contested because they measure different things (RUBRIC.md).`);
+    const partialNote = assessment.partial
+      ? ` · **PARTIAL run: ${assessment.n}/${assessment.cases_total} cases recorded** (the rest await a key with credit — re-run \`npm run evals -- --record\` to complete; nothing is silently dropped)`
+      : '';
+    lines.push(`Run ${assessment.run_at} · ${assessment.n} cases · split core/contested because they measure different things (RUBRIC.md)${partialNote}.`);
     lines.push('');
     lines.push('| Split | n | AI-or-not | Risk tier | Autonomy-ceiling respected | Answer-judge (not gated) |');
     lines.push('|---|---|---|---|---|---|');
@@ -73,8 +76,15 @@ function main() {
       else lines.push(`| ${c.config} | ${c.queries} | ${pct(c.recall_at_5)} | ${c.mrr} |`);
     }
     lines.push('');
+    const denseSkipped = retrieval.configs.some((c: any) => c.config !== 'bm25-only' && c.skipped);
+    const hybridRow = retrieval.configs.find((c: any) => c.config === 'hybrid');
+    const denseRow = retrieval.configs.find((c: any) => c.config === 'dense-only');
+    const measuredVerdict =
+      hybridRow && !hybridRow.skipped && denseRow && !denseRow.skipped
+        ? ` Measured here: **hybrid (${pct(hybridRow.recall_at_5)}) beats both bm25-only (${pct(retrieval.ci_gate.value)}) and dense-only (${pct(denseRow.recall_at_5)})**, so hybrid is the live default — pattern names favour BM25, descriptions favour dense, and fusing genuinely helps on this corpus.`
+        : ' Dense/hybrid rows populate once `npm run ingest:embed` has run with a working key.';
     lines.push(
-      `The **default retrieval leg is the measured winner, not an assumed one.** \`bm25-only\` runs with no API key and is the deterministic CI gate (floor ${retrieval.ci_gate.floor}, current ${retrieval.ci_gate.value} — ${retrieval.ci_gate.pass ? 'PASS' : 'FAIL'}). On this corpus, pattern *names* are terms-of-art (BM25 territory) while use-case *descriptions* are paraphrase (dense territory), so hybrid is the principled default — but the scorecard decides: if a leg is net-negative here, the default flips, exactly as it did for the sibling \`ai-act-triage\`. Dense/hybrid rows populate once \`npm run ingest:embed\` has run with a key.`,
+      `The **default retrieval leg is the measured winner, not an assumed one.** \`bm25-only\` runs with no API key and is the deterministic CI gate (floor ${retrieval.ci_gate.floor}, current ${retrieval.ci_gate.value} — ${retrieval.ci_gate.pass ? 'PASS' : 'FAIL'}). On this corpus, pattern *names* are terms-of-art (BM25 territory) while use-case *descriptions* are paraphrase (dense territory), so hybrid is the principled default — but the scorecard decides: if a leg is net-negative here, the default flips, exactly as it did for the sibling \`ai-act-triage\`.${denseSkipped ? ' Dense/hybrid rows populate once `npm run ingest:embed` has run with a working key.' : measuredVerdict}`,
     );
   } else {
     lines.push('_No retrieval scorecard yet. Run `npm run evals:retrieval`._');

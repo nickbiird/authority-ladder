@@ -10,6 +10,7 @@
  *
  * Run: GOOGLE_API_KEY=... npm run ingest:embed   (one-off, costs a fraction of a cent)
  */
+import '../lib/loadenv';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 

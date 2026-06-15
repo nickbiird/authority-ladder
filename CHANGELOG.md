@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-06-15 — live-API hardening + retrieval recorded
+
+Took the build to the live Gemini API. The first `--record` attempt surfaced two real, fixed issues, and recorded the full retrieval scorecard before the key's credit ran out.
+
+### Fixed (found by running against the real API)
+- **Gemini `response_schema` rejects `.nullable()`** (it compiles to a list-valued `type`, which the proto refuses). `Economics.cost_per_task_eur` is now `.optional()` — every consumer already handled the absent case via `?? ` / `!= null`. All five structured-output schemas re-verified clean.
+- **Embed endpoint had no retry.** Added exponential backoff with `Retry-After` support to the query-embed call (`lib/retrieval.ts`) and `maxRetries: 6` on the generation model (`lib/llm.ts`), for free-tier 429s.
+- **Standalone scripts/evals didn't load `.env`** (only Next.js did). Added `lib/loadenv.ts` (Node's built-in `loadEnvFile`, no dependency) wired into the script entrypoints.
+
+### Recorded
+- **Embeddings generated + committed** (`data/embeddings.json`, 29 vectors, gemini-embedding-001 @ 768d) so dense/hybrid retrieval works on a clone + key.
+- **Retrieval scorecard, all three legs:** bm25-only 69.2% · dense-only 66.7% · **hybrid 71.8% recall@5 (MRR 0.847)**. Hybrid is the measured winner on this corpus; the trust report now states the verdict from the data.
+
+### Resilience
+- The assessment eval now records partial progress and **stops early on a credit/quota error** instead of losing everything (`evals/run.ts`); the scorecard self-describes as `partial`. The retrieval scorecard degrades dense/hybrid legs to "skipped (reason)" on a dead key rather than crashing.
+
+### Still open
+- **Classification accuracy + cost rows not recorded:** the available key's prepayment credit depleted partway through the first run (core-01..04 ran clean — the pipeline + schemas are proven live — then 429'd on credit). Re-run `npm run evals -- --record` with a topped-up key to complete; the partial-resilience means progress isn't lost.
+
 ## 2026-06-15 — initial build
 
 The first end-to-end vertical slice: a multi-agent, write-enabled AI-transformation triage system, built to the design contracts in `AGENTS.md`.

@@ -50,7 +50,9 @@ function makeModel(model: string, apiKey?: string) {
         'Retrieval, the input gate, and `npm test` / `npm run evals:retrieval` run with no key.',
     );
   }
-  return new ChatGoogleGenerativeAI({ model, temperature: 0, apiKey: key });
+  // maxRetries cushions free-tier 429s on the generation calls (the embed query
+  // has its own backoff in retrieval.ts); temperature 0 keeps eval paths reproducible.
+  return new ChatGoogleGenerativeAI({ model, temperature: 0, apiKey: key, maxRetries: 6 });
 }
 
 /**

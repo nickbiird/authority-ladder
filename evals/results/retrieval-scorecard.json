@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-06-14T22:43:59.113Z",
+  "run_at": "2026-06-15T07:18:42.576Z",
   "corpus_query": "golden case description; relevant = labelled relevant_pattern_ids",
   "k": 5,
   "configs": [
@@ -11,17 +11,15 @@
     },
     {
       "config": "dense-only",
-      "queries": 0,
-      "recall_at_5": 0,
-      "mrr": 0,
-      "skipped": "no embeddings or no GOOGLE_API_KEY"
+      "queries": 24,
+      "recall_at_5": 0.667,
+      "mrr": 0.668
     },
     {
       "config": "hybrid",
-      "queries": 0,
-      "recall_at_5": 0,
-      "mrr": 0,
-      "skipped": "no embeddings or no GOOGLE_API_KEY"
+      "queries": 24,
+      "recall_at_5": 0.718,
+      "mrr": 0.847
     }
   ],
   "ci_gate": {

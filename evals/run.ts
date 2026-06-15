@@ -17,6 +17,7 @@
  * different things — see evals/golden/RUBRIC.md). Any ✗ prints the judge's
  * critique, so a failure is explainable, never a bare number.
  */
+import '../lib/loadenv';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { buildGraph } from '../lib/graph';
@@ -141,12 +142,14 @@ function report(fixtures: Fixture[], mode: string) {
   return { splits, failures, cost, costPerCase };
 }
 
-function writeScorecard(fixtures: Fixture[]) {
+function writeScorecard(fixtures: Fixture[], totalCases?: number) {
   const { splits, cost, costPerCase } = scoreFixtures(fixtures);
   if (!existsSync(RESULTS)) mkdirSync(RESULTS, { recursive: true });
   const scorecard = {
     run_at: new Date().toISOString(),
     n: fixtures.length,
+    cases_total: totalCases ?? fixtures.length,
+    partial: totalCases !== undefined && fixtures.length < totalCases,
     splits: {
       core: { ...splits.core, ai_or_not_pct: splits.core.ai_or_not / (splits.core.n || 1), risk_pct: splits.core.risk / (splits.core.n || 1) },
       contested: { ...splits.contested, ai_or_not_pct: splits.contested.ai_or_not / (splits.contested.n || 1), risk_pct: splits.contested.risk / (splits.contested.n || 1) },
@@ -189,19 +192,46 @@ async function main() {
   }
   const cases = loadCases();
   const fixtures: Fixture[] = [];
+  const skipped: string[] = [];
   for (const c of cases) {
     process.stdout.write(`  ${c.id} ... `);
-    const f = await runCase(c, apiKey);
-    const s = scoreDiagnosis(f.got as never, f.expected);
-    process.stdout.write(`${s.ai_or_not_match ? '✓' : '✗'}aon ${s.risk_match ? '✓' : '✗'}risk ${f.answer_verdict.verdict === 'pass' ? '✓' : '✗'}ans\n`);
-    fixtures.push(f);
+    try {
+      const f = await runCase(c, apiKey);
+      const s = scoreDiagnosis(f.got as never, f.expected);
+      process.stdout.write(`${s.ai_or_not_match ? '✓' : '✗'}aon ${s.risk_match ? '✓' : '✗'}risk ${f.answer_verdict.verdict === 'pass' ? '✓' : '✗'}ans\n`);
+      fixtures.push(f);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stdout.write(`✗ ERROR: ${msg.slice(0, 90)}\n`);
+      skipped.push(`${c.id}: ${msg.slice(0, 140)}`);
+      // A depleted-credit / quota error means every subsequent case fails too —
+      // stop early and record what completed rather than burning through 20 more failures.
+      if (/credit|quota|depleted|exhausted|RESOURCE_EXHAUSTED|billing/i.test(msg)) {
+        console.log('\nStopping early: the API key is out of credit/quota. Recording the cases completed so far.');
+        break;
+      }
+    }
   }
-  report(fixtures, record ? 'record — live run' : 'live');
-  writeScorecard(fixtures);
+
+  if (fixtures.length === 0) {
+    console.error('\nNo cases completed — nothing to record. Check the API key has credit/quota, then re-run.');
+    process.exit(1);
+  }
+
+  const partial = fixtures.length < cases.length;
+  report(fixtures, record ? `record — live run (${fixtures.length}/${cases.length}${partial ? ', PARTIAL' : ''})` : 'live');
+  writeScorecard(fixtures, cases.length);
+  if (skipped.length) {
+    console.log(`\n${skipped.length} case(s) skipped (honest — not silently dropped):`);
+    skipped.forEach((s) => console.log('  ' + s));
+  }
   if (record) {
     if (!existsSync(path.dirname(FIXTURES))) mkdirSync(path.dirname(FIXTURES), { recursive: true });
     writeFileSync(FIXTURES, JSON.stringify(fixtures, null, 2) + '\n');
-    console.log(`\nRecorded ${fixtures.length} fixtures -> ${path.relative(process.cwd(), FIXTURES)} (the CI replay gate now activates)`);
+    console.log(
+      `\nRecorded ${fixtures.length}/${cases.length} fixtures -> ${path.relative(process.cwd(), FIXTURES)} (the CI replay gate now activates).` +
+        (partial ? ' PARTIAL run — re-run with credit to record the rest; the scorecard notes the count.' : ''),
+    );
   }
 }
 
