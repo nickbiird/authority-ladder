@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests (corpus, retrieval, PII rail, autonomy ladder)
+        run: npm test
+      - name: Corpus is freshly ingested (no drift between cards and corpus.json)
+        run: |
+          npm run ingest
+          git diff --exit-code -- data/corpus.json || (echo "data/corpus.json is stale — run 'npm run ingest' and commit." && exit 1)
+      - name: Retrieval regression gate (BM25, deterministic, no key)
+        run: npm run evals:retrieval
+      - name: Security-probe gate (input rail + structural containment, no key)
+        run: npm run evals:probes
+      - name: Assessment replay gate (committed fixtures, zero model calls)
+        run: npm run evals -- --replay
+      - name: Build
+        run: npm run build

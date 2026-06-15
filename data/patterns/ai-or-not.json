@@ -1,0 +1,105 @@
+[
+  {
+    "id": "pat-aon-none",
+    "title": "Not an AI Problem — The Deterministic Tell",
+    "category": "ai-or-not",
+    "summary": "Roughly a third of candidate use cases are deterministic, rules-based, or reporting problems that a SQL view, a workflow engine, or a form solves better than any model. Saying 'this isn't AI' is the credibility move, not a failure to deliver.",
+    "body": "When to use: the request resolves to a known-answer lookup, a fixed business rule, a threshold alert, a scheduled report, or a CRUD form. The tell: you can write the spec as deterministic logic with no ambiguity in the input-to-output mapping — 'if invoice > 30 days overdue, flag it' is a WHERE clause, not a classifier. If a domain expert can enumerate the rules on a whiteboard in an afternoon, it is not an AI problem. Another tell: the stakeholder asks for an 'AI dashboard' but every metric is a GROUP BY. The failure mode of forcing AI here is worse than no AI: you add latency, non-determinism, hallucination risk, eval burden, and per-call cost to a problem that a materialised view answered for free and auditably. Industry reality: ~30% of intake in any enterprise AI pipeline is here, and naming it builds trust — a vendor who declines the non-problem is believed on the real ones. Build instead: a SQL view, a BI report, a rules engine (Drools-style), a workflow tool (Camunda/Temporal), validation logic, or a search index. Reserve AI for genuine ambiguity, unstructured input, or generative output. Cost envelope: near-zero marginal cost and millisecond latency versus an LLM's per-token cost and seconds of latency.",
+    "failure_modes": [
+      "Wrapping a deterministic rule in an LLM, importing hallucination and non-determinism into an answer that was previously exact and auditable",
+      "AI-washing a reporting request — a 'GenAI insights' layer over what is fundamentally a GROUP BY, adding cost and latency for no accuracy gain",
+      "Eval and compliance burden incurred for a problem that needed none, slowing delivery and inviting regulatory scrutiny",
+      "Stakeholder trust erosion when the 'AI' gives a different answer to the same input twice"
+    ],
+    "rejected_alternatives": [
+      "Single LLM call for 'flexibility' — flip to this only when the rules genuinely cannot be enumerated because inputs are unstructured natural language or the output is generative",
+      "Classical ML classifier — flip only if the rule boundary is fuzzy and must be learned from labelled examples rather than declared"
+    ],
+    "implies_verdict": "none",
+    "tags": ["deterministic", "sql-view", "rules-engine", "ai-washing", "reporting", "crud", "triage", "credibility"],
+    "cost_envelope": "Near-zero marginal cost, sub-millisecond to low-millisecond latency vs. an LLM's per-token cost and multi-second latency."
+  },
+  {
+    "id": "pat-aon-classical-ml",
+    "title": "Classical ML — Structured Features, Labelled Outcomes, Tabular Scale",
+    "category": "ai-or-not",
+    "summary": "When the input is structured/tabular, the target is a numeric or categorical label learnable from history, and you score millions of rows cheaply with calibrated confidence, the answer is gradient-boosted trees or logistic regression — not an LLM.",
+    "body": "When to use: the problem is prediction or scoring over structured features — churn, default risk, demand forecast, lead scoring, fraud likelihood, predictive maintenance, propensity, anomaly detection on metrics. The tell: you have (or can label) a column of outcomes and a table of features, the boundary must be *learned* from data (so it is not a rules engine / 'none'), and you need calibrated probabilities, feature importances, and reproducible scoring at high throughput. If the value is in the *number* and the explanation of which features drove it, that is classical ML. Reach for gradient-boosted trees (XGBoost/LightGBM), logistic/linear regression, random forests, or an isolation forest for anomalies. The trap: teams reach for an LLM to 'predict churn from the data' because LLMs are the default hammer in 2026 — but an LLM is a poor, expensive, uncalibrated, slow estimator over tabular data with no native notion of probability and no feature-attribution you can defend in a model-risk review. Build instead: a feature pipeline, a tree-based model, proper train/validation/test splits, calibration (Platt/isotonic), and SHAP for explainability. Cost envelope: training is cheap and one-off; inference is sub-millisecond per row at fractions of a cent for millions of rows — orders of magnitude below per-token LLM scoring.",
+    "failure_modes": [
+      "Using an LLM as a tabular predictor — uncalibrated probabilities, no feature importances, 100-1000x the inference cost, and unusable throughput for batch scoring of millions of rows",
+      "Skipping a held-out test set and reporting training-set accuracy, masking overfitting until production drift hits",
+      "Target leakage — a feature that encodes the label (e.g. 'account closed date' predicting churn) inflating offline metrics that collapse live",
+      "No drift monitoring, so a model silently decays as the population shifts and nobody notices until business metrics move"
+    ],
+    "rejected_alternatives": [
+      "Single LLM zero/few-shot classification — flip to it only when inputs are unstructured text/images with no tabular features and labelled data is too scarce to train a supervised model",
+      "Rules engine ('none') — flip back if the decision boundary turns out to be a small set of declarable thresholds an expert can write by hand"
+    ],
+    "implies_verdict": "classical_ml",
+    "tags": ["tabular", "gradient-boosted-trees", "xgboost", "logistic-regression", "calibration", "shap", "churn", "forecasting", "anomaly-detection", "feature-importance"],
+    "cost_envelope": "One-off cheap training; sub-millisecond inference at fractions of a cent per million rows — 100-1000x cheaper than per-token LLM scoring."
+  },
+  {
+    "id": "pat-aon-single-llm",
+    "title": "Single LLM Call — Stateless Transform Over Text You Already Have",
+    "category": "ai-or-not",
+    "summary": "When the task is a one-shot transform of unstructured text the user supplies in-prompt — summarise, classify, extract, rewrite, translate — and the model's own weights hold enough knowledge, a single bounded LLM call is the whole solution. No retrieval, no tools, no loop.",
+    "body": "When to use: the input is natural language (or an image), the output is generative or a soft classification, the needed knowledge is general (in-weights) or pasted into the prompt, and the task completes in one pass with no external lookup and no multi-step reasoning over changing state. Canonical shapes: summarise this ticket, classify this email's intent, extract fields from this contract paragraph into JSON, rewrite this in plain language, translate, sentiment, redact PII. The tell: everything the model needs is *in the prompt or in its training data*, and one request-response is enough — there is no 'and then look something up' or 'and then take an action.' The trap runs both ways. Over-engineering: bolting RAG or an agent onto a self-contained transform, adding a vector DB and a tool loop to summarise text the user already pasted. Under-engineering: using a single call when the answer depends on private, current, or large corpora the model never saw — that is RAG, because the symptom will be confident hallucination. Build instead: one well-structured prompt with a system role, few-shot examples if needed, structured output (JSON schema / function-calling for shape), output validation, and a lightweight LLM-as-judge or golden-set eval. Keep it stateless and idempotent. Cost envelope: one call's worth of tokens, low-single-digit seconds; cache identical prompts to drop repeat cost to zero.",
+    "failure_modes": [
+      "Asking a single call about private or post-cutoff facts not in the prompt — the model hallucinates confidently because it has no grounding (this is the RAG boundary)",
+      "Free-text output where downstream needs structure — parsing breaks; fix with JSON-schema / structured-output constraints, not regex on prose",
+      "No eval harness, so silent quality regression on prompt or model version change ships to users undetected",
+      "Prompt-injection via the user-supplied text steering the transform when the output is trusted downstream"
+    ],
+    "rejected_alternatives": [
+      "RAG — flip to it the moment the answer depends on a private, large, or frequently-changing knowledge base the model wasn't trained on and can't fit in-context",
+      "Classical ML classifier — flip back for high-volume, latency-sensitive classification over structured features where a calibrated cheap model beats per-token cost",
+      "Agent — flip up only when the task needs multi-step tool use or branching over state, not a single transform"
+    ],
+    "implies_verdict": "single_llm",
+    "tags": ["stateless", "summarisation", "classification", "extraction", "structured-output", "json-schema", "few-shot", "llm-as-judge", "prompt", "one-shot"],
+    "cost_envelope": "One call's tokens at low-single-digit-second latency; identical-prompt caching drops repeat cost to ~zero."
+  },
+  {
+    "id": "pat-aon-rag",
+    "title": "RAG — Grounded Answers Over a Private, Current, or Large Corpus",
+    "category": "ai-or-not",
+    "summary": "When the answer lives in documents the model never saw — private, post-cutoff, or too large for the context window — and the failure mode of a bare LLM is confident hallucination, you retrieve the relevant passages and ground generation on them with citations.",
+    "body": "When to use: questions over internal knowledge bases, policy/contract/regulation corpora, product docs, ticket history, or any source-of-truth the base model can't have memorised and that changes faster than retraining. The tell: users need answers *with citations* traceable to a document, the corpus is private or current, and a single LLM call would invent plausible-but-wrong specifics. If the requirement is 'answer must be backed by our documents and I can click through to the source,' it's RAG — not a fine-tune (which bakes facts in opaquely and can't cite) and not a single call. Build: chunk with overlap, embed into a vector store, and retrieve with a *hybrid* of dense (semantic embeddings) and sparse (BM25) signals fused by reciprocal rank fusion (RRF), because dense alone misses exact-term and acronym matches and sparse alone misses paraphrase. Add a cross-encoder reranker over the top-k to sharpen precision before the context window, then generate with inline citations and a groundedness/faithfulness eval (LLM-as-judge plus a golden Q-A set). The trap: assuming RAG is mandatory whenever documents exist — if the corpus fits in a modern long context window and is queried rarely, just stuff it in the prompt; RAG's retrieval infra is overhead you only earn at scale or freshness. The other trap is RAG-as-agent: retrieval is one tool-less step, not an autonomous loop. Cost envelope: embedding/index build is one-off; per query is one retrieval (cheap) plus one generation call, low-single-digit seconds.",
+    "failure_modes": [
+      "Dense-only retrieval that whiffs on exact terms, IDs, and acronyms — fixed by adding BM25 and fusing with RRF, then reranking",
+      "Chunking that splits a fact across boundaries so no single chunk is retrievable — answers go silently incomplete; fix chunk size/overlap and add a reranker",
+      "No groundedness/faithfulness eval, so the model cites a passage but contradicts it (citation theatre) and nobody catches it",
+      "Stale index — the corpus updated but embeddings didn't, so 'current' answers are quietly out of date"
+    ],
+    "rejected_alternatives": [
+      "Fine-tuning the base model on the corpus — flip to RAG instead whenever you need citations, fast-changing facts, or per-tenant data isolation; fine-tune only to teach style/format, not facts",
+      "Long-context prompt stuffing — flip up to RAG when the corpus exceeds the context window, query volume makes re-sending it wasteful, or freshness demands selective retrieval",
+      "Agent — flip up only if answering requires multi-step tool use or actions beyond retrieve-then-generate"
+    ],
+    "implies_verdict": "rag",
+    "tags": ["rag", "retrieval", "bm25", "dense-retrieval", "hybrid-search", "rrf", "reranker", "embeddings", "vector-store", "citations", "groundedness", "hallucination"],
+    "cost_envelope": "One-off index build; per query = one cheap retrieval + one generation call at low-single-digit-second latency."
+  },
+  {
+    "id": "pat-aon-agent",
+    "title": "Agent — Multi-Step Tool Use Over Changing State With a Genuine Loop",
+    "category": "ai-or-not",
+    "summary": "Reserve an agent for tasks that require multi-step planning, branching, and tool calls over state that changes mid-task — where the next step depends on the result of the last. The default verdict is 'not an agent'; most 'we need an agent' requests are a workflow or a SQL view.",
+    "body": "When to use: the task genuinely needs the model to decide *which* tools to call, in *what order*, reacting to intermediate results it could not know in advance — e.g. investigate an alert by querying logs, then a database, then opening a ticket, with the path determined at runtime. The tell: you cannot draw the workflow as a fixed DAG ahead of time because the branching is data-dependent and unbounded; there's a real plan-act-observe loop. If you *can* draw the steps in advance, build a deterministic workflow (a pipeline / state machine), not an agent — fixed sequences don't need an autonomous planner and are cheaper, faster, and debuggable. The dominant trap: 'we need an agent' that is really a SQL view, a single RAG call, or a three-step workflow with no branching — agents are the most expensive, slowest, least predictable, hardest-to-eval option and the most over-prescribed in 2026. When it is truly an agent, build with a supervisor/orchestrator over specialised sub-agents, tools exposed via MCP, durable human-in-the-loop (interrupt + checkpointer) for consequential actions, and placement on an explicit autonomy ladder (suggest -> draft -> act-with-approval -> act). Guard the lethal trifecta — private data + untrusted content + external communication in one context is an exfiltration path; break at least one leg. Eval per-trajectory, not just final answer, and track cost-per-task. Cost envelope: many LLM calls per task, seconds-to-minutes latency, the highest cost and variance of any pattern — justify it against a cheaper verdict before committing.",
+    "failure_modes": [
+      "Agentifying a fixed sequence — paying for non-deterministic planning where a deterministic workflow/DAG would be cheaper, faster, and debuggable",
+      "Unbounded loops and tool-call storms when the planner can't converge, spiking cost-per-task with no completion guarantee",
+      "Lethal trifecta exposure — private data, untrusted input, and outbound actions in one context enabling prompt-injection-driven exfiltration",
+      "No durable HITL on consequential actions, so a hallucinated plan executes irreversible side effects; and trajectory-blind evals that score only the final answer while the reasoning was wrong"
+    ],
+    "rejected_alternatives": [
+      "Deterministic workflow / state machine — flip up to an agent only when the step sequence is genuinely data-dependent and cannot be drawn as a fixed DAG in advance",
+      "Single RAG call — flip up only when answering requires acting on the retrieved info via tools, not just reading and citing it",
+      "SQL view / rules engine ('none') — the most common thing a 'we need an agent' request actually is; flip up only after confirming real multi-step, branching tool use over changing state"
+    ],
+    "implies_verdict": "agent",
+    "tags": ["agent", "supervisor", "orchestrator", "tool-use", "mcp", "autonomy-ladder", "human-in-the-loop", "interrupt-checkpointer", "lethal-trifecta", "cost-per-task", "multi-step", "workflow-vs-agent"],
+    "cost_envelope": "Many LLM calls per task, seconds-to-minutes latency, highest cost and variance of any pattern — track cost-per-task and justify against a cheaper verdict first."
+  }
+]

@@ -1,0 +1,47 @@
+import { NextRequest } from 'next/server';
+import { Command } from '@langchain/langgraph';
+import { buildGraph } from '@/lib/graph';
+import { getCheckpointer } from '@/lib/checkpointer';
+import { sseResponse, type ResumePayload } from '@/lib/stream';
+
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
+/**
+ * Resumes a paused triage with the human approve/reject decision. With the
+ * Postgres checkpointer this is a completely fresh invocation — possibly days
+ * later, possibly on a different serverless instance. With the in-memory
+ * fallback it only works while the process that paused is still alive; the UI
+ * surfaces which mode is active so a failed resume is explicable, not mysterious.
+ *
+ * This is the ONLY path that lets commit_roadmap run. The write is gated on this
+ * human decision, not on anything the model produced — the structural half of
+ * the lethal-trifecta containment.
+ */
+export async function POST(req: NextRequest) {
+  const body = (await req.json()) as { threadId?: string } & ResumePayload;
+  if (!body.threadId || typeof body.approved !== 'boolean') {
+    return Response.json({ error: 'threadId and approved are required.' }, { status: 400 });
+  }
+
+  const { saver } = await getCheckpointer();
+  const graph = buildGraph().compile({ checkpointer: saver });
+
+  // verify the thread actually has a pending interrupt before resuming
+  const state = await graph.getState({ configurable: { thread_id: body.threadId } });
+  if (!state.next || state.next.length === 0) {
+    return Response.json(
+      { error: 'No pending approval for this thread. With in-memory checkpointing, pending approvals do not survive a restart — this is the documented degradation; set DATABASE_URL for durable approvals.' },
+      { status: 410 },
+    );
+  }
+
+  return sseResponse(
+    body.threadId,
+    () =>
+      graph.stream(
+        new Command({ resume: { approved: body.approved, note: body.note ?? '' } }),
+        { configurable: { thread_id: body.threadId, api_key: process.env.GOOGLE_API_KEY }, streamMode: 'updates', recursionLimit: 100 },
+      ) as unknown as Promise<AsyncIterable<Record<string, unknown>>>,
+  );
+}

@@ -1,0 +1,113 @@
+[
+  {
+    "id": "pat-ladder-suggest",
+    "title": "Suggest tier — AI recommends, a human decides and executes everything",
+    "category": "autonomy-ladder",
+    "summary": "The lowest rung of the autonomy ladder: the system surfaces recommendations, rankings, or flags, but takes zero state-changing action. A human reads, decides, and executes. The default ceiling for irreversible or high-cost-of-error workflows.",
+    "body": "When to use: any workflow where the cost-of-error is high AND the action is irreversible, or where trust has not yet been earned. The 2026 C-suite question is not 'can AI assist?' — assist is a solved baseline — it is 'where do we grant AI the authority to ACT?'. Suggest is the answer of last resort: the model proposes, a human disposes. Output is advisory only — a ranked list, a flagged anomaly, a drafted opinion the human must re-key. The sizing rule: map cost-of-error x reversibility. When an error is expensive and cannot be undone (wire transfers, clinical orders, contract execution, destructive deletes), the tier ceiling is Suggest regardless of model accuracy. Reversibility, not confidence, sets the ceiling. The gate it requires: none beyond a human consuming the output — there is no commit path to gate. The tell: stakeholders say 'I want it to recommend, but I'll pull the trigger,' or the action touches money, safety, legal liability, or anything with no undo. Failure mode of granting more authority here: an over-eager pilot wires Draft or Approve onto an irreversible action and a single hallucinated recommendation executes before anyone reads it. Cost envelope: cheapest tier — no commit infrastructure, no rollback, no checkpointer; cost-per-task is one inference plus a human read.",
+    "failure_modes": [
+      "Recommendation theatre: humans rubber-stamp the top suggestion without reading, so 'human decides' becomes auto-execute with extra latency and no real review.",
+      "Surfacing low-precision flags at high volume causes alert fatigue; reviewers tune out and miss the one true positive.",
+      "Mistaking Suggest for safe-by-default — if the suggestion itself triggers a downstream automation, you have silently climbed the ladder without a gate."
+    ],
+    "rejected_alternatives": [
+      "Draft tier — flip up to Draft once the action becomes reversible or low-cost-of-error and the human is willing to edit-then-commit rather than re-key from scratch.",
+      "Pure classical ML scoring with no LLM — flip to that when the recommendation is a stable, well-labelled prediction (churn, fraud score) where an LLM adds cost and explainability risk without lift."
+    ],
+    "tags": [
+      "autonomy-ladder",
+      "suggest",
+      "human-in-the-loop",
+      "cost-of-error",
+      "reversibility",
+      "advisory",
+      "irreversible-action"
+    ],
+    "implies_tier": "suggest",
+    "cost_envelope": "Cheapest tier: one inference + human read; no commit/rollback/checkpointer infrastructure."
+  },
+  {
+    "id": "pat-ladder-draft",
+    "title": "Draft tier — AI produces the artefact, a human edits and commits",
+    "category": "autonomy-ladder",
+    "summary": "Second rung: the system generates a complete, ready-to-send artefact (email, ticket, summary, code diff, SQL) that a human edits and then commits. AI does the work; the human owns the send. The sweet spot for reversible, medium-cost-of-error knowledge work.",
+    "body": "When to use: reversible actions with low-to-medium cost-of-error where the bottleneck is production effort, not judgement. The 2026 reframe — 'where do we grant authority to ACT?' — places Draft as the first rung where AI does real labour: it builds the artefact end-to-end, but the commit boundary stays human. The human's job shifts from authoring to editing, which is faster and catches hallucinations before they ship. The sizing rule: cost-of-error x reversibility. Draft is correct when an error is recoverable (you can resend a corrected email, revert a commit, reopen a ticket) and the blast radius is bounded to one artefact. If the artefact auto-sends on generation, you have left Draft for Act and must re-sentence the tier. The gate it requires: a mandatory human edit-and-commit step — the artefact must not leave the system without a person clicking send. The tell: 'write the first draft and I'll review it,' 'fill in the ticket and I'll submit.' Failure mode of granting more authority: removing the commit gate so drafts auto-send, turning a 95%-good drafter into a 5%-wrong autonomous sender at full volume; or 'review fatigue' where humans approve drafts unread, collapsing Draft into Act without the engineering. Cost envelope: one-to-few inferences per artefact plus human edit time; no durable orchestration required.",
+    "failure_modes": [
+      "Review collapse: under time pressure humans commit drafts unedited, so the edit gate exists on paper but not in practice — Draft silently behaves like Act.",
+      "Over-trust in fluent output: a confidently-worded draft hides a factual error the editor skims past because the prose reads clean.",
+      "Auto-send creep: a 'send' shortcut or integration removes the commit boundary, escalating the tier without anyone re-assessing cost-of-error."
+    ],
+    "rejected_alternatives": [
+      "Suggest tier — flip down to Suggest when the action becomes irreversible or high-cost-of-error (legal, financial, clinical), where even an edited human-committed artefact carries unacceptable downside if wrong.",
+      "Act-with-approval tier — flip up when the artefact is part of a multi-step plan and you want the human to approve a proposed action rather than hand-edit each artefact, e.g. agentic workflows with a supervisor proposing tool calls."
+    ],
+    "tags": [
+      "autonomy-ladder",
+      "draft",
+      "human-in-the-loop",
+      "edit-and-commit",
+      "reversibility",
+      "commit-gate",
+      "knowledge-work"
+    ],
+    "implies_tier": "draft",
+    "cost_envelope": "Few inferences per artefact + human edit time; no durable HITL orchestration needed."
+  },
+  {
+    "id": "pat-ladder-approve",
+    "title": "Act-with-approval tier — AI plans and proposes the action, a human approves before it executes",
+    "category": "autonomy-ladder",
+    "summary": "Third rung: the agent autonomously plans and proposes a concrete state-changing action (a tool call, a write, a transaction), then pauses at a durable approval gate. A human approves or rejects, and only then does it execute. The default ceiling for agentic systems touching real systems of record.",
+    "body": "When to use: agentic workflows where the AI should own the reasoning and the plan, but a specific action crosses a cost-of-error or reversibility threshold that demands a human sign-off — refunds above a limit, production writes, outbound customer messages, privileged tool calls. This is the rung the 2026 'where do we grant authority to ACT?' question most often lands on for enterprise agents: act, but with a gate. The sizing rule: cost-of-error x reversibility, applied per action, not per workflow — a supervisor agent can self-execute reversible low-stakes steps (read, search, retrieve via RAG/BM25/RRF/reranker) while routing only the irreversible or expensive steps to the approval gate. The gate it requires: durable human-in-the-loop — an interrupt + checkpointer that persists the agent's state, pauses execution, and survives process restarts so approval can happen minutes or hours later without losing context. A naive in-memory pause is not a gate; it loses state on crash and creates phantom executions. The tell: 'the agent can do the work but a human signs off before it hits the system of record,' 'needs an approval step for anything that writes or spends.' Failure mode of granting more authority: removing the gate to reach full Act on an action whose cost-of-error was never re-evaluated; or exposing the lethal trifecta (untrusted input + private data + exfiltration channel) so an injected instruction drives an auto-approved tool call. Also: approval-rubber-stamping, where high gate volume trains humans to click approve blind. Cost envelope: agent loop (multiple inferences + tool calls) plus durable-state orchestration and a human approval queue — materially more expensive per task than Draft.",
+    "failure_modes": [
+      "Rubber-stamp approval: gate volume outstrips human attention, approvals become reflexive clicks, and the gate stops catching bad actions.",
+      "Non-durable pause: an in-memory interrupt without a checkpointer loses agent state on restart, causing dropped or duplicated executions.",
+      "Lethal-trifecta exposure: untrusted input reaches an agent with private data and an action channel, so a prompt-injected instruction rides through the approval gate as a legitimate-looking proposed tool call."
+    ],
+    "rejected_alternatives": [
+      "Full Act tier — flip up only after the gate has demonstrated a low approval-override rate over a meaningful sample AND the action is reversible/bounded enough that removing the human is defensible; keep the gate otherwise.",
+      "Draft tier — flip down when the agent's plans are too unreliable to trust even with approval (humans are rejecting most proposals), making per-artefact human editing cheaper than reviewing bad plans."
+    ],
+    "tags": [
+      "autonomy-ladder",
+      "act-with-approval",
+      "durable-hitl",
+      "interrupt-checkpointer",
+      "supervisor",
+      "lethal-trifecta",
+      "approval-gate",
+      "agentic"
+    ],
+    "implies_tier": "act_with_approval",
+    "cost_envelope": "Agent loop + durable-state orchestration + human approval queue; materially pricier per task than Draft."
+  },
+  {
+    "id": "pat-ladder-act",
+    "title": "Act tier — AI executes autonomously inside a bounded blast radius, audited after the fact",
+    "category": "autonomy-ladder",
+    "summary": "Top rung: the agent plans and executes state-changing actions with no per-action human gate, governed instead by hard guardrails, scoped permissions, and after-the-fact audit. Reserved for reversible, low-cost-of-error, high-volume actions where a human-in-the-loop is the bottleneck.",
+    "body": "When to use: only where the action is reversible or trivially compensatable AND the cost-of-error per action is low AND volume makes a human gate uneconomic — auto-tagging, idempotent retries, self-healing infra ops, cache invalidation, low-value reversible transactions. The 2026 question 'where do we grant authority to ACT?' has its sharpest answer here: full autonomy is earned, narrow, and bounded, not a default. The sizing rule: cost-of-error x reversibility sets the ceiling, and Act sits behind it only when both are favourable; you do not reach Act by trusting the model more, you reach it by making the blast radius small enough that being wrong is cheap and undoable. The gate it requires: no per-action human gate, but hard pre-execution guardrails instead — scoped least-privilege credentials, spend/rate limits, allow-listed tools and MCP servers, input/output validation, and a kill switch — plus comprehensive after-the-fact audit logging and (often) an LLM-as-judge or eval harness scoring a sample of executed actions. The tell: 'it just does it,' 'no human in the loop,' 'too high-volume to approve each one.' Failure mode of granting authority too broadly: scoping Act onto an irreversible or high-cost action because the demo looked reliable — the first compounding error or prompt-injected tool call executes at machine speed with no human between it and production, and you discover the missing gate from the incident, not the design. Also: privilege over-grant (broad credentials turning a small bug into a large breach) and silent drift (no eval harness, so accuracy decays unnoticed). Cost envelope: highest operational and governance cost — full guardrail stack, audit pipeline, continuous evals, and incident-response readiness; cheapest per individual action but most expensive to run safely.",
+    "failure_modes": [
+      "Blast-radius miscalibration: Act is granted on an action that turns out to be irreversible or high-cost, so a single error executes at machine speed with no human able to intervene.",
+      "Privilege over-grant: broad standing credentials instead of scoped least-privilege tools mean one injected or buggy call can reach far beyond its intended scope.",
+      "Silent accuracy drift: without continuous LLM-as-judge / eval sampling on executed actions, degradation goes undetected until it surfaces as a production incident."
+    ],
+    "rejected_alternatives": [
+      "Act-with-approval tier — flip down the moment any action in scope is irreversible, high-cost-of-error, or where the override rate hasn't been proven low; keep the durable approval gate until the blast radius is genuinely small.",
+      "Suggest tier — flip all the way down for safety-, legal-, or money-critical actions where no guardrail stack makes unattended execution acceptable; advisory output plus a human trigger is the correct ceiling there."
+    ],
+    "tags": [
+      "autonomy-ladder",
+      "act",
+      "full-autonomy",
+      "guardrails",
+      "least-privilege",
+      "blast-radius",
+      "llm-as-judge",
+      "audit-log",
+      "kill-switch"
+    ],
+    "implies_tier": "act",
+    "cost_envelope": "Highest run-safely cost: full guardrail stack + audit pipeline + continuous evals + incident readiness, though cheapest per individual action."
+  }
+]

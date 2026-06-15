@@ -1,0 +1,154 @@
+[
+  {
+    "id": "pat-fail-data-readiness",
+    "title": "Data readiness is the silent gate before any AI pilot",
+    "category": "adoption-failure",
+    "summary": "Pilots stall not on model quality but on ungoverned, fragmented, permission-leaky data; the deployer inherits liability for whatever the retriever surfaces. The tell is a working demo on a curated sample that collapses on production data.",
+    "body": "Use this when a team wants to launch an AI pilot but cannot answer where the ground-truth data lives, who owns it, how fresh it is, or who is allowed to see each row. The organizational two-thirds of AI failure starts here: 78-88% of firms run pilots, yet the data substrate is rarely production-grade. The tell is a demo that dazzles on a hand-curated 50-document sample and then hallucinates, cites stale records, or leaks cross-tenant data once pointed at the real corpus. RAG amplifies whatever is wrong upstream: no canonical source of truth means the reranker confidently surfaces contradictory documents; absent row-level permissions, retrieval becomes an exfiltration path and the deployer (not the model vendor) owns the breach. Failure modes: PII surfacing through a vector index that ignored ACLs; embedding drift as documents update but the index does not; BM25/dense hybrid retrieval scoring duplicate-but-conflicting records. Remediation: a data-readiness gate before model selection — canonical source mapping, freshness SLAs, ACL-aware retrieval (filter at query time, not post-hoc), and an eval set built from real (anonymized) queries. Rejected alternative: 'just fine-tune the model on our data' — flip to fine-tuning only when behavior/format adaptation is the gap, never to fix retrieval freshness or permissions, which fine-tuning bakes in and cannot revoke.",
+    "failure_modes": [
+      "Demo works on a curated sample, collapses on the full production corpus",
+      "Vector index ignores row-level ACLs, turning retrieval into a data-exfiltration path the deployer is liable for",
+      "Embedding/index drift: documents update but the index goes stale, surfacing contradictory or outdated records"
+    ],
+    "rejected_alternatives": [
+      "Fine-tune the base model on internal data instead of fixing retrieval — flip only when format/behavior adaptation is the actual gap, never to patch freshness or permissions"
+    ],
+    "tags": [
+      "data-readiness",
+      "rag",
+      "retrieval",
+      "acl",
+      "data-governance",
+      "embedding-drift",
+      "deployer-liability"
+    ],
+    "cost_envelope": "Data-readiness gating typically consumes 40-60% of total program effort before a single model call; skipping it front-loads zero cost and back-loads pilot failure."
+  },
+  {
+    "id": "pat-fail-process-redesign",
+    "title": "Value materialises only when the process is redesigned, not bolted-on",
+    "category": "adoption-failure",
+    "summary": "Dropping an LLM into an unchanged workflow yields a demo, not earnings impact — ~80% of adopters see no P&L movement because the surrounding process still routes, reviews, and rekeys exactly as before.",
+    "body": "Use this when a pilot 'works' technically but moves no business metric. This is the single biggest reason for the 78-88% adoption / ~80% no-earnings-impact gap: the AI was layered onto a process designed for humans, so the human still does the handoffs, the second review, and the rekeying into the system of record. The tell is a copilot that drafts an answer which a person then copy-pastes, re-checks, and re-enters elsewhere — net cycle time barely moves, and headcount/throughput are unchanged. Value lands only when the workflow is re-architected around the new capability: collapsing steps, moving the human to exception-handling at the autonomy ladder's act-with-approval tier, and writing outputs straight into downstream systems via tool/MCP calls rather than a chat window. Failure modes: 'shadow rework' where staff redo the AI's output to feel safe; cost-per-task that rises because the LLM is added on top of, not in place of, existing labor; metrics measuring model accuracy instead of end-to-end cycle time or cost-per-resolved-case. Remediation: map the as-is process, find the redesign that removes steps, and instrument cost-per-task and throughput, not BLEU/accuracy. Rejected alternative: 'ship the copilot first, redesign later' — flip to copilot-first only for genuinely exploratory/low-volume work; for high-volume repeatable processes, redesign before deploying or the pilot is structurally incapable of moving earnings.",
+    "failure_modes": [
+      "Human still performs handoffs, second-review, and rekeying — net cycle time and headcount unchanged",
+      "Cost-per-task rises because the LLM is bolted on top of existing labor rather than replacing steps",
+      "Success measured by model accuracy instead of end-to-end cycle time or cost-per-resolved-case"
+    ],
+    "rejected_alternatives": [
+      "Ship the copilot now and redesign the process later — flip to copilot-first only for low-volume exploratory work; high-volume repeatable processes must be redesigned before deployment"
+    ],
+    "tags": [
+      "process-redesign",
+      "workflow",
+      "cost-per-task",
+      "autonomy-ladder",
+      "earnings-impact",
+      "throughput",
+      "shadow-rework"
+    ],
+    "cost_envelope": "Process redesign is where 60-70% of realized value originates; the model itself is often <15% of program cost and ~0% of P&L impact when bolted onto an unchanged workflow."
+  },
+  {
+    "id": "pat-fail-change-management",
+    "title": "Adoption dies in the user's chair, not the model card",
+    "category": "adoption-failure",
+    "summary": "A technically correct system that users distrust, route around, or quietly disuse is a failure; the organizational two-thirds is the workforce, incentives, and trust calibration — not the eval score.",
+    "body": "Use this when usage telemetry is flat despite a deployed, accurate system. The model can be right and the program still fails because the people whose work it changes were treated as a rollout afterthought. The tell: low daily-active usage, users pasting AI output into a separate doc 'to check it', frontline staff describing the tool as 'extra work', and a vocal subset convinced it threatens their role. This is distinct from process redesign (the workflow) — here the blocker is human: trust, incentives, fear, and the absence of a feedback loop. Failure modes: over-trust (users rubber-stamp wrong AI outputs because no calibration training was given), under-trust (users ignore correct outputs and do it manually), and incentive misalignment (people are still measured on the old metric the AI now bypasses). Without a thumbs-up/down or correction loop feeding the eval set, the system never improves and users see no reason to engage. Remediation: name the workforce impact explicitly, train trust calibration (when to trust vs verify), align incentives to the new process, embed an in-product feedback loop, and recruit power-users as champions before broad rollout. Rejected alternative: 'mandate usage top-down' — flip to a mandate only when the redesigned process genuinely requires the tool and trust is already established; mandating before trust produces malicious compliance and gamed telemetry.",
+    "failure_modes": [
+      "Flat daily-active usage; users route around the tool or re-check every output in a separate doc",
+      "Over-trust (rubber-stamping wrong outputs) or under-trust (ignoring correct ones) from missing trust-calibration training",
+      "Incentives still reward the old metric the AI bypasses, so staff have no reason to adopt"
+    ],
+    "rejected_alternatives": [
+      "Mandate usage top-down — flip to a mandate only once the redesigned process requires the tool and trust is established; mandating earlier yields gamed telemetry and malicious compliance"
+    ],
+    "tags": [
+      "change-management",
+      "adoption",
+      "trust-calibration",
+      "workforce",
+      "incentives",
+      "feedback-loop",
+      "user-disuse"
+    ],
+    "cost_envelope": "Change-management/enablement is routinely under-budgeted at <10% of program spend while accounting for the majority of stalled rollouts; budget parity with engineering is a reasonable floor."
+  },
+  {
+    "id": "pat-fail-governance-maturity",
+    "title": "Governance maturity gates the jump from pilot to scale",
+    "category": "adoption-failure",
+    "summary": "Pilots scale only when there is an accountable owner, an audit trail, an eval/regression harness, and a liability model — absent these, risk/legal blocks production and the pilot freezes at 'impressive demo'.",
+    "body": "Use this when a pilot has proven value but cannot get past risk, legal, or security review into production. The deployer (the organization running the system) holds the regulatory and liability burden for outputs — under emerging AI regulation, obligations default to the deployer, not the model provider. Pilots that lacked governance from day one hit a wall: no model owner, no logged decision trail, no human-in-the-loop policy, no regression evals, so no one will sign off on production exposure. The tell: a successful pilot stuck in 'security review' for months, ad-hoc prompt changes with no versioning, and no answer to 'what did the system decide and why' for any past case. Failure modes: silent regressions (a prompt tweak degrades a cohort with no eval to catch it); no immutable audit log, so an adverse decision cannot be explained or contested; unclear accountability when the system errs; lethal-trifecta exposure (model with private-data access + untrusted input + exfiltration channel) never assessed. Remediation: a lightweight governance spine before scaling — named accountable owner, versioned prompts/configs, an LLM-as-judge + golden-set regression harness in CI, decision logging, and a documented HITL/escalation policy mapped to autonomy tier. Rejected alternative: 'governance slows us down, add it post-launch' — flip to defer-governance only for internal, non-consequential, reversible use; for any externally-facing or consequential decision, governance is the gate, not a follow-up ticket.",
+    "failure_modes": [
+      "Pilot frozen in risk/legal/security review for months with no accountable owner or audit trail",
+      "Silent regression: a prompt or config change degrades a cohort with no eval harness to catch it",
+      "Lethal-trifecta exposure (private data + untrusted input + exfiltration channel) never assessed; deployer holds the liability"
+    ],
+    "rejected_alternatives": [
+      "Defer governance until after launch — flip to defer only for internal, reversible, non-consequential use; consequential or externally-facing decisions require governance as the scaling gate"
+    ],
+    "tags": [
+      "governance",
+      "auditability",
+      "deployer-liability",
+      "llm-as-judge",
+      "regression-evals",
+      "human-in-the-loop",
+      "lethal-trifecta",
+      "accountability"
+    ],
+    "cost_envelope": "A minimal governance spine (owner, versioning, regression harness, decision log) is weeks of setup; retrofitting it after a stalled review costs months of frozen pilot plus re-architecture."
+  },
+  {
+    "id": "pat-fail-pilot-purgatory",
+    "title": "Pilot purgatory — many proofs-of-concept, almost none scaled",
+    "category": "adoption-failure",
+    "summary": "Fewer than 10% of pilots reach production; orgs accumulate disconnected POCs because each is funded as a demo, not a product, with no path, owner, or budget to scale.",
+    "body": "Use this when an organization has a sprawling portfolio of pilots and a near-zero production rate. This is the aggregate symptom — high adoption, near-zero scaling — where the other failures compound into a pattern. The tell: a long list of 'AI initiatives', each a six-week POC that wowed a steering committee and then stalled; no shared platform, so every pilot reinvents auth, retrieval, evals, and observability; and no funded path from demo to product. Pilots are scored on novelty, not cost-per-task or production-readiness, so they optimize for the demo and ignore the unglamorous 80% (data plumbing, monitoring, HITL, integration into systems of record). Failure modes: POC-to-prod cliff (the demo has no error handling, no eval gate, no rollback); platform sprawl (N pilots, N bespoke stacks, no reuse); orphaned ownership (the pilot team disbands, no one operates it); vanity scoring that rewards the flashiest prototype over the highest-value boring one. Remediation: stop funding pilots as demos — fund a shared platform (auth, retrieval, eval harness, observability, HITL) and a stage-gated path where a pilot must clear cost-per-task, eval, and ownership gates to proceed; kill or merge the long tail. Rejected alternative: 'let a thousand pilots bloom, the best will scale themselves' — flip to broad experimentation only in a genuine discovery phase with a small budget cap; past that, concentrate spend on 1-2 bets with a real production path.",
+    "failure_modes": [
+      "POC-to-prod cliff: demo has no error handling, eval gate, rollback, or monitoring",
+      "Platform sprawl: every pilot reinvents auth/retrieval/evals/observability with no reuse",
+      "Orphaned ownership and vanity scoring — pilots rewarded for novelty, not cost-per-task or production-readiness"
+    ],
+    "rejected_alternatives": [
+      "Let many pilots run and assume the best self-scales — flip to broad experimentation only in a capped discovery phase; beyond it, concentrate budget on 1-2 bets with a funded production path"
+    ],
+    "tags": [
+      "pilot-purgatory",
+      "scaling",
+      "poc-to-prod",
+      "platform",
+      "portfolio",
+      "cost-per-task",
+      "production-readiness"
+    ],
+    "cost_envelope": "A shared platform amortizes the unglamorous 80% (plumbing, evals, observability) across pilots; without it, each POC re-pays that cost and <10% ever recover it in production."
+  },
+  {
+    "id": "pat-fail-org-vs-tech-split",
+    "title": "The org two-thirds vs the tech one-third — budget the split correctly",
+    "category": "adoption-failure",
+    "summary": "AI value is roughly one-third technology and two-thirds organizational change; programs that spend the inverse ratio produce strong demos and zero earnings impact. This is the meta-diagnostic for scale-vs-stall.",
+    "body": "Use this as the framing card when a CTO asks 'why do our pilots not move the P&L'. The empirical pattern: high adoption (78-88%), ~80% with no earnings impact, <10% scaled — and the through-line is misallocation. Programs pour budget and attention into the technical one-third (model selection, prompt engineering, the demo) and under-fund the organizational two-thirds (data readiness, process redesign, change management, governance). The tell: a steering deck dominated by model benchmarks and architecture diagrams, with no slide on who-owns-it, what-process-changes, how-users-adopt, or who-is-liable. This card is the supervisor over the other five — it routes a stalled program to the specific failing third. Failure modes: 'tech-led, business-absent' programs where engineering owns a project that only a business process owner can land; success metrics expressed as model accuracy not business outcome; reorganization treated as a post-launch concern; the model swapped repeatedly while the unchanged org guarantees no impact. Remediation: invert the budget — spend the majority on the organizational two-thirds, instrument business outcomes (cost-per-task, cycle time, scaled cases) not model metrics, and assign a business owner accountable for adoption, not just a technical lead. Rejected alternative: 'get the model/architecture perfect first, then handle the org' — flip to tech-first sequencing only when the technical feasibility is genuinely unproven; once feasibility is shown (it usually is), every further technical investment without org change is dead weight.",
+    "failure_modes": [
+      "Budget and attention inverted: majority on the technical one-third, scraps on the organizational two-thirds",
+      "Tech-led, business-absent ownership — engineering owns work only a process owner can land",
+      "Model swapped repeatedly while the unchanged organization guarantees zero earnings impact"
+    ],
+    "rejected_alternatives": [
+      "Perfect the model/architecture first, handle the org later — flip to tech-first only while feasibility is genuinely unproven; once feasibility is shown, further tech spend without org change is dead weight"
+    ],
+    "tags": [
+      "org-vs-tech",
+      "transformation",
+      "budget-allocation",
+      "business-outcomes",
+      "ownership",
+      "earnings-impact",
+      "scale-vs-stall",
+      "meta-diagnostic"
+    ],
+    "cost_envelope": "Rule of thumb: ~1/3 of program effort/cost is technology, ~2/3 is organizational change; programs spending the inverse ratio reliably produce demos with no measurable P&L movement."
+  }
+]

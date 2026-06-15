@@ -1,0 +1,210 @@
+[
+  {
+    "id": "pat-arch-rag-over-docs",
+    "title": "RAG over documents — grounded answers with citations over a private corpus",
+    "category": "architecture",
+    "summary": "The reference pattern when the answer lives in documents the model never saw and must be cited: ingest, chunk, hybrid-retrieve, generate grounded on the retrieved passages with inline citations and a faithfulness eval.",
+    "body": "When to use: a knowledge-base Q&A, a policy/contract assistant, a support-deflection bot over product docs — any case where the verdict is 'rag' and the requirement is a cited answer traceable to a source. The pipeline: a layout-aware parser preserves tables and structure; structure-aware chunking with overlap keeps a fact inside one chunk; embeddings index into a vector store; retrieval is hybrid (dense + BM25 fused by RRF) so paraphrase AND exact terms both hit; an optional reranker sharpens precision before the context window; generation is constrained to cite only retrieved passages, and a groundedness/faithfulness check (LLM-as-judge + a golden Q&A set) gates quality. ACLs are filtered at retrieval, not generation, so a user never has a forbidden document summarised back to them. The autonomy tier is 'draft' by default — RAG answers are reviewable artefacts, not actions. Cost envelope: a one-off index build, then per query one cheap retrieval + one generation call; reranking adds a small reranker call.",
+    "failure_modes": [
+      "Fragment context: chunking splits a fact across boundaries so no single chunk is retrievable and the answer is silently incomplete",
+      "Citation theatre: the model cites a passage but contradicts it; without a faithfulness eval nobody catches the contradiction",
+      "Permissions lost at parse: ACLs are dropped, so retrieval surfaces documents the user is not allowed to see (the intern reads the CEO's comp)",
+      "Stale index: documents updated, embeddings did not, so 'current' answers are quietly out of date"
+    ],
+    "rejected_alternatives": [
+      "Fine-tuning on the corpus — flip to RAG whenever citations, fast-changing facts, or per-tenant isolation are needed; fine-tune only to teach style/format, never facts",
+      "Long-context prompt stuffing — flip up to RAG when the corpus exceeds the window, query volume makes re-sending wasteful, or freshness demands selective retrieval"
+    ],
+    "implies_verdict": "rag",
+    "implies_tier": "draft",
+    "tags": ["rag", "retrieval", "citations", "hybrid-search", "reranker", "acl", "faithfulness", "vector-store", "chunking"],
+    "cost_envelope": "One-off index build; per query = one cheap retrieval + one generation call (+ a small reranker call), low-single-digit-second latency."
+  },
+  {
+    "id": "pat-arch-nl2sql-readonly",
+    "title": "NL2SQL over a read-only sandbox — natural-language analytics with a hard write barrier",
+    "category": "architecture",
+    "summary": "Translate a business question into SQL against a governed schema, execute it against a read-only replica behind row-level security, and return the result with the query shown. The write barrier is structural, not prompted.",
+    "body": "When to use: 'let business users ask the warehouse questions in plain English' — the knowledge lives in a SQL schema, not documents, so RAG is the wrong tool and NL2SQL is right. The pipeline: retrieve the relevant table/column schema (schema is itself a retrieval problem at enterprise scale), generate SQL constrained to SELECT, validate the SQL against an allowlist / parse the AST to reject any mutation or privileged function, execute against a READ-ONLY replica under row-level security so the connection itself cannot write or see another tenant's rows, then return rows plus the generated SQL for transparency. A self-correction loop re-prompts on a database error (one retry), and execution-accuracy is measured on a golden set of question/SQL pairs. The autonomy tier is 'draft': the user sees and trusts the query before acting on the numbers. The write barrier is defence-in-depth — AST validation AND a read-only credential AND RLS — because a prompt instruction ('ignore that, DROP the table') must be unable to cause a write even if it reaches the model. Cost envelope: schema retrieval + one generation call + at most one self-correction; sub-second query execution on a warehouse.",
+    "failure_modes": [
+      "A generated mutation or privileged call slips through prompt-only guarding — mitigated by AST validation + a read-only credential + RLS, never by the prompt alone",
+      "Schema hallucination: the model invents a column/table, so the query errors or, worse, silently returns wrong numbers; mitigated by grounding generation on retrieved schema",
+      "Cross-tenant leakage when RLS is not enforced at the connection, so a cleverly-phrased question reads another customer's rows",
+      "Semantic-but-wrong SQL: syntactically valid, returns a number, but answers a subtly different question; caught only by execution-accuracy evals on a golden set"
+    ],
+    "rejected_alternatives": [
+      "A fixed BI dashboard / pre-built views — flip back to this when the question set is small and stable; NL2SQL earns its place only when the question space is open-ended",
+      "Giving the agent write access for 'convenience' — rejected outright: the moment it can mutate, the read-only safety argument collapses; flip never for an analytics assistant"
+    ],
+    "implies_verdict": "rag",
+    "implies_tier": "draft",
+    "tags": ["nl2sql", "text2sql", "read-only", "row-level-security", "ast-validation", "schema-retrieval", "self-correction", "execution-accuracy", "structural-security"],
+    "cost_envelope": "Schema retrieval + one generation call + <=1 self-correction; sub-second query execution against a warehouse replica."
+  },
+  {
+    "id": "pat-arch-classification-router",
+    "title": "Classification router — a fixed pipeline that classifies and routes, not a free agent",
+    "category": "architecture",
+    "summary": "When the task is 'put each item in the right bucket and send it onward' — triage tickets, route intents, tier risk — a deterministic classify-then-route workflow beats an agent: the procedure is known, so always run it, don't let a planner decide whether to.",
+    "body": "When to use: support-ticket triage, intent routing, lead qualification, risk-tier classification — anything where the steps are enumerable and only the label is model-decided. The pipeline is a DAG, not a loop: optional input gate -> (optional retrieval for grounding) -> a structured classification call returning a label + confidence + rationale -> deterministic routing on the label. The classifier returns structured output (the label is an enum, never free text) so routing is code. Low-confidence or out-of-distribution items route to a human queue rather than being force-classified. The autonomy tier is 'act_with_approval' or 'act' depending on cost-of-error of a misroute: a mis-routed support ticket is cheap and reversible (act); a mis-tiered compliance risk is not (gate it). The key discipline: a classifier that *might* retrieve or *might* call a tool is strictly worse than a pipeline that always does the same thing — reserve the agent for genuinely dynamic branching. Cost envelope: one cheap fast-tier call per item (+ optional retrieval); the cheapest agentic-adjacent pattern, suitable for high volume.",
+    "failure_modes": [
+      "Forced classification of out-of-distribution items into the nearest bucket instead of routing them to a human — mitigated by a confidence threshold + an 'unknown' route",
+      "Free-text labels that break deterministic routing — mitigated by a structured enum output",
+      "Silent class drift as the input distribution shifts, degrading routing accuracy with no eval to catch it",
+      "Over-escalation to an agent loop for a task that is a fixed classify-then-route, paying planner cost for no branching"
+    ],
+    "rejected_alternatives": [
+      "A free ReAct agent — flip up only when routing genuinely needs dynamic, data-dependent multi-step tool use; a known procedure should always run, not be planned each time",
+      "Classical ML classifier — flip back when inputs are structured/tabular and a calibrated cheap model beats per-token LLM cost at volume"
+    ],
+    "implies_verdict": "single_llm",
+    "implies_tier": "act_with_approval",
+    "tags": ["classification", "router", "workflow", "dag", "structured-output", "confidence-threshold", "triage", "intent-routing"],
+    "cost_envelope": "One cheap fast-tier call per item (+ optional retrieval); the cheapest agentic-adjacent pattern, fits high volume."
+  },
+  {
+    "id": "pat-arch-multi-agent-research",
+    "title": "Multi-agent research — a supervisor over isolated read-only specialists",
+    "category": "architecture",
+    "summary": "The one topology where parallel multi-agent earns its place: read-side intelligence-gathering. A supervisor routes to isolated-context specialists that each retrieve and reason over their own slice, then a synthesiser merges. Never use parallel agents for writes.",
+    "body": "When to use: a research/diagnosis task that decomposes into independent sub-questions, each needing its own focused context — e.g. analyse a use case along separate axes (feasibility, architecture, economics). A supervisor classifies the task and routes to <=3 specialists; each specialist has ONE scoped tool and a clean single-purpose context, so no specialist's window is polluted by another's evidence (context isolation is the whole point). Specialists run in parallel because they only READ — they return distilled findings, they never mutate shared state. A synthesiser (or a downstream judge) merges. The hard rule: this is read-side only. Parallel multi-agent EXECUTION (agents that write/act concurrently) fails far more often than a single path because sub-agents make conflicting implicit decisions with no shared context — a widely-cited study puts coordination-driven failure around a third (directional, not gospel). So: multi-agent to gather, single-threaded to act. The autonomy tier of the research itself is 'suggest'/'draft'; any action it recommends goes through a separate single-threaded, human-gated writer. Cost envelope: N specialist calls in parallel + one synthesis call — more tokens than a single agent, but lower wall-clock and far better context hygiene than one over-stuffed agent.",
+    "failure_modes": [
+      "Using parallel agents for writes/actions: sub-agents make conflicting implicit decisions with no shared context (~1/3 coordination-failure territory) — contain to read-side only",
+      "Supervisor misroute: the router's prompt is the highest-leverage prompt in the system; a bad route sends the work to the wrong specialist — mitigated by routing cases in the golden set",
+      "Context bleed: specialists share a window and pollute each other's reasoning — mitigated by strict per-specialist context isolation",
+      "Token/loop burn if specialists are unbounded — mitigated by max-iterations and a per-run token cap"
+    ],
+    "rejected_alternatives": [
+      "A single over-stuffed agent holding every tool and all context — flip up to a supervisor when context separation, tool sprawl (>~15 tools), parallelism, or privilege separation is needed",
+      "Parallel write-agents for 'speed' — rejected outright; reserve concurrency for reads and keep exactly one path to any action"
+    ],
+    "implies_verdict": "agent",
+    "implies_tier": "suggest",
+    "tags": ["multi-agent", "supervisor", "context-isolation", "read-side", "single-threaded-writer", "coordination-tax", "parallel", "specialists", "synthesis"],
+    "cost_envelope": "N parallel specialist calls + one synthesis call; more tokens than a single agent but lower wall-clock and cleaner context than one over-stuffed agent."
+  },
+  {
+    "id": "pat-arch-human-gated-write",
+    "title": "Human-gated write — the irreversible action lives outside the agent loop, behind a durable gate",
+    "category": "architecture",
+    "summary": "The single most important containment pattern for a write-enabled agent: the agent proposes, the run pauses at a durable human gate, and only an approved decision lets a separate, single-purpose node execute the irreversible action. The action is never a tool the agent can call.",
+    "body": "When to use: any agent whose value requires a consequential, irreversible side effect — committing a plan, sending an outbound message, executing a transaction, writing to a system of record. The architecture: the agent reasons up to the irreversible step and produces a structured proposal; the graph durably pauses (interrupt + checkpointer); a human approves or rejects out-of-band; on approval, a dedicated action node — OUTSIDE the agent loop, with no model in it — executes exactly the approved action. The reason the action is a separate node and not a tool: a tool the agent can call autonomously is reachable by any instruction that reaches the model, including one smuggled in through retrieved content (lethal-trifecta exposure). By moving the write outside the loop and gating it on the USER's intent rather than on any text the model saw, an injected 'now publish X' cannot fire — the write path simply isn't reachable without a human. The autonomy tier is 'act_with_approval' by definition. Cost envelope: the agent loop + a durable-state pause + a human approval step; the gate adds storage and human latency, not model cost.",
+    "failure_modes": [
+      "Exposing the write as a tool the agent can call: an injected instruction in retrieved content triggers it autonomously (lethal trifecta) — mitigated by moving the action outside the loop, gated on user intent",
+      "Ephemeral approval: an in-memory prompt dies with the process, losing the pending action and leaving no audit artefact — mitigated by a durable checkpointer",
+      "Rubber-stamp approval: gate volume outstrips attention and approvals become reflexive clicks — mitigated by sizing the gate to genuinely irreversible steps only, and logging every decision",
+      "Approving stale state: the world changed during the pause; mitigated by re-validating preconditions in the action node before executing"
+    ],
+    "rejected_alternatives": [
+      "Letting the agent self-execute the write for 'autonomy' — flip up to full 'act' only after the action is proven reversible/bounded and the override rate is demonstrably low; keep the gate otherwise",
+      "An after-the-fact review of an already-executed action — rejected: oversight that happens after the artefact exists is review, not oversight; the gate must precede the irreversible step"
+    ],
+    "implies_verdict": "agent",
+    "implies_tier": "act_with_approval",
+    "tags": ["human-in-the-loop", "durable-hitl", "interrupt-checkpointer", "single-threaded-writer", "lethal-trifecta", "irreversible-action", "audit", "containment", "out-of-loop-action"],
+    "cost_envelope": "Agent loop + a durable-state pause + a human approval step; the gate adds storage and human latency, not model cost."
+  },
+  {
+    "id": "pat-arch-workflow-dag",
+    "title": "Workflow / DAG — a fixed graph of steps when the path is known in advance",
+    "category": "architecture",
+    "summary": "When you can draw the steps on a whiteboard before runtime, build a deterministic state machine, not an agent. A DAG is cheaper, faster, debuggable, and the right default for any enumerable multi-step process.",
+    "body": "When to use: the procedure is known and only specific decision points are model-made — a classify-then-retrieve-then-summarise pipeline, an ETL-with-an-LLM-step, a proposer/critic/gate flow. Model it as a state graph (LangGraph-class): typed state, nodes for each step, conditional edges for the few branches, a checkpointer for persistence and resume. The discipline: workflow before agent, always. An agent that *might* take the right steps is strictly worse than a graph that *always* takes them, when the steps are known. Reserve the autonomous planner for genuinely data-dependent, unbounded branching. Persistence (a checkpointer) buys durable HITL and audit for free, which is why even simple flows benefit from the graph runtime over raw Python once a human gate or a resume is in scope. The autonomy tier depends on what the terminal node does — a read-only summary is 'draft'; a terminal write goes through the human-gated-write pattern. Cost envelope: exactly the per-node model calls the path requires, with no planner overhead and no loop risk — the most predictable cost profile of any agentic pattern.",
+    "failure_modes": [
+      "Over-escalating to a free agent for an enumerable process — paying non-deterministic planning cost and loop risk where a DAG is cheaper and debuggable",
+      "Hidden state mutation across nodes that clobber a channel — mitigated by typed state with explicit reducers on accumulating channels (usage, evidence)",
+      "Unbounded revision loops if a critic/propose cycle has no cap — mitigated by enforcing the max-revisions in graph topology, not the prompt",
+      "Treating the DAG as fully deterministic when a node is an LLM call — the branch points are still non-deterministic and need evals on the routing decisions"
+    ],
+    "rejected_alternatives": [
+      "Raw Python orchestration — flip back for a trivial single-step loop; flip to a graph runtime the moment persistence, HITL, audit, or resume is needed",
+      "A free ReAct agent — flip up only when the step sequence is genuinely data-dependent and cannot be drawn as a fixed DAG in advance"
+    ],
+    "implies_verdict": "agent",
+    "implies_tier": "draft",
+    "tags": ["workflow", "dag", "state-machine", "langgraph", "checkpointer", "deterministic", "conditional-edges", "typed-state", "reducers"],
+    "cost_envelope": "Exactly the per-node calls the path requires — no planner overhead, no loop risk; the most predictable cost profile of any agentic pattern."
+  },
+  {
+    "id": "pat-arch-single-llm-extraction",
+    "title": "Single-LLM structured extraction — one call, schema-constrained, validated",
+    "category": "architecture",
+    "summary": "For a stateless transform of text the user already has — extract fields, classify, summarise, rewrite — one schema-constrained LLM call with output validation is the entire architecture. No retrieval, no tools, no loop.",
+    "body": "When to use: the verdict is 'single_llm' — everything the model needs is in the prompt or in-weights, and one request/response suffices. Canonical: extract structured fields from a pasted document into JSON, classify intent, summarise, redact, rewrite. The architecture is a single call with a system role, optional few-shot examples, and a JSON-schema / function-calling constraint so the output shape is guaranteed, followed by programmatic validation (the schema is the contract; reject and retry on a violation). An eval is still mandatory — a golden set + an LLM-as-judge or exact-match scorer — because a prompt or model-version change can silently regress quality. Keep it stateless and idempotent so identical inputs cache to zero marginal cost. The autonomy tier is 'draft' (a reviewable artefact) unless the extraction feeds a downstream action, in which case the action is gated separately. The trap is scope creep: bolting retrieval or an agent loop onto a self-contained transform adds infra and cost for no accuracy. Cost envelope: one call's tokens at low-single-digit-second latency; cache identical prompts.",
+    "failure_modes": [
+      "Free-text output where downstream needs structure — parsing breaks; mitigated by a JSON-schema / function-calling constraint plus validation, not regex on prose",
+      "Asking the single call about facts not in the prompt — confident hallucination; the symptom that you have crossed into RAG territory",
+      "No eval harness, so a prompt or model-version bump silently regresses quality in production",
+      "Prompt-injection via the user-supplied text steering the transform when the output is trusted downstream"
+    ],
+    "rejected_alternatives": [
+      "RAG — flip to it the moment the answer depends on a private, large, or fast-changing corpus the model wasn't trained on",
+      "An agent loop — flip up only when the task needs multi-step tool use or branching over state, never for a one-shot transform"
+    ],
+    "implies_verdict": "single_llm",
+    "implies_tier": "draft",
+    "tags": ["single-llm", "structured-output", "json-schema", "extraction", "validation", "stateless", "few-shot", "idempotent", "caching"],
+    "cost_envelope": "One call's tokens at low-single-digit-second latency; identical-prompt caching drops repeat cost to ~zero."
+  },
+  {
+    "id": "pat-arch-hybrid-retrieval",
+    "title": "Hybrid retrieval — dense + BM25 fused by RRF, reranked, measured not assumed",
+    "category": "architecture",
+    "summary": "The default retrieval architecture: run a dense (semantic) leg and a sparse (BM25) leg, fuse with reciprocal rank fusion, optionally rerank, and let a retrieval scorecard decide the default — because which leg wins is a property of the corpus, not a belief.",
+    "body": "When to use: any RAG or NL2SQL system, because retrieval quality caps answer quality — a perfect generator over the wrong passages is wrong. The architecture: a dense leg (embeddings, catches paraphrase and semantic match) and a sparse leg (BM25, catches exact terms, IDs, acronyms) ranked independently and fused with reciprocal rank fusion (RRF), then an optional cross-encoder reranker over the fused top-k to sharpen precision before the context window. The non-negotiable discipline: measure all configurations head-to-head on a golden set (recall@k AND faithfulness), because the winning configuration is corpus-dependent — on a paraphrase-heavy corpus dense may dominate and a weak BM25 leg can actually pollute the fusion; on a terms-of-art corpus BM25 earns its keep. Default to the MEASURED winner, keep the others as selectable, measured configs so the trade-off stays visible rather than being silently dropped. The autonomy tier is N/A (retrieval is a component, not an action). Cost envelope: two retrieval passes + an RRF merge (negligible) + an optional reranker call; brute-force cosine is sub-millisecond up to ~100k chunks before a vector index earns its place.",
+    "failure_modes": [
+      "Dense-only retrieval whiffs on exact terms, IDs, and acronyms; BM25-only misses paraphrase — mitigated by running both and fusing",
+      "RRF lets a weak/noisy leg pollute a strong one — a low-recall BM25 leg can drag distractors into the fused top-k; caught only by measuring fused vs single-leg on a golden set",
+      "Recall tuned while precision is ignored, stuffing the window with near-duplicates — mitigated by a reranker and measuring precision too",
+      "Assuming hybrid is always best and skipping the scorecard — the default must be the measured winner on THIS corpus, not a heuristic"
+    ],
+    "rejected_alternatives": [
+      "Dense-only — flip back to it when the scorecard shows the sparse leg is net-negative on this corpus (it happens on paraphrase-heavy sets)",
+      "GraphRAG / multi-hop — flip up for global or multi-hop questions, but state the token-cost caveat in the same breath ($-per-query and latency rise sharply)"
+    ],
+    "implies_verdict": "rag",
+    "tags": ["hybrid-search", "bm25", "dense-retrieval", "rrf", "reranker", "recall", "faithfulness", "retrieval-scorecard", "vector-index"],
+    "cost_envelope": "Two retrieval passes + RRF merge (negligible) + optional reranker; brute-force cosine is sub-millisecond up to ~100k chunks before a vector index is needed."
+  },
+  {
+    "id": "pat-arch-durable-hitl",
+    "title": "Durable human-in-the-loop — interrupt + checkpointer, resumable and audited",
+    "category": "architecture",
+    "summary": "The pattern that separates a production approval gate from a toy: pause the run on a checkpointed interrupt, persist the full state durably, let a human approve hours later from a different process, then resume exactly where it stopped — with an audit artefact.",
+    "body": "When to use: any autonomy tier of 'act_with_approval' or above, anywhere an irreversible step needs human sign-off. The mechanism: the graph hits an interrupt that emits the proposal and a thread id, the full state is checkpointed to durable storage (Postgres-class), and execution stops. The process can die — serverless function returns, server restarts, days pass. A human approves out-of-band; a fresh invocation loads the thread by id and resumes with the approval payload, continuing to the action node. The contrast that matters: an in-memory approval prompt (await-input with a timeout) dies with the process, loses the pending decision, and leaves no audit trail — and a timeout that silently returns 'no answer' manufactures false confidence. Durability is what makes the gate real. The audit artefact (who approved what, when, against which proposal and evidence) is a first-class output, not a log line. Crucially, report the mode honestly: if only in-memory checkpointing is configured, say so — an ephemeral gate dressed as durable is worse than no gate. Cost envelope: storage for the checkpoint + the human latency window; zero added model cost.",
+    "failure_modes": [
+      "Ephemeral pause: an in-memory interrupt loses state on restart, dropping or duplicating the pending action and leaving no audit trail",
+      "Silent timeout-to-default: a gate that returns a default on timeout manufactures false approval confidence",
+      "Resuming against stale preconditions: the world changed during the pause — mitigated by re-validating in the action node before executing",
+      "Claiming durability while only in-memory checkpointing is wired — mitigated by reporting the actual checkpointer mode on every run"
+    ],
+    "rejected_alternatives": [
+      "In-process approval prompt with a timeout — rejected: dies with the process, no audit; flip never for a consequential gate",
+      "No gate / fully autonomous — flip up to bounded 'act' only when the action is reversible and cheap and the override rate is proven low"
+    ],
+    "implies_verdict": "agent",
+    "implies_tier": "act_with_approval",
+    "tags": ["durable-hitl", "interrupt-checkpointer", "postgres", "resumable", "audit", "approval-gate", "serverless", "state-persistence"],
+    "cost_envelope": "Checkpoint storage + the human latency window; zero added model cost."
+  },
+  {
+    "id": "pat-arch-eval-harness",
+    "title": "Eval harness — per-component golden set, binary rubrics, cost-per-task, CI gate",
+    "category": "architecture",
+    "summary": "The appreciating skill and the rung-one deliverable of any agentic build: a golden set that scores retrieval, routing, and answer INDEPENDENTLY with binary pass/fail rubrics, derives cost-per-task from real token traces, and gates merges like a failing test.",
+    "body": "When to use: every agentic system, built FIRST, not last — frontier teams spend the majority of engineering time here, and an eval-driven loop (not fine-tuning) is what moves a system from ~50% to ~90% on real tasks. The architecture: a golden set of labelled cases; per-component scorers (retrieval recall@k; route accuracy; answer correctness) so a failure is localised, not a single opaque number; binary rubrics (pass/fail + a written critique), never a 1-5 score that drifts; cost-per-task derived from real token traces with every invisible call (judge, retries, sub-agents) included, because those are 5-10x the naive estimate; and a regression gate in CI so a degradation blocks merge like a failing unit test. Ground the judge on the evidence the system ACTUALLY used (the retrieved passages), never a re-search of the raw query — re-searching breaks on write-shaped queries and analytics answers. The golden set must include adversarial probes (injection, false-premise, multi-hop, unanswerable); a probe that passes is a regression guard and a capability proof. Calibrate on real, messy data — ~70% on a hard real-world set is the target; 100% on a clean set means the set is too easy, so harden the DATA, never write unfair questions. Cost envelope: the eval run's tokens (a few euros for dozens of cases) is the recurring price of changing anything safely.",
+    "failure_modes": [
+      "Eval-last: optimising before measuring, so 'it seems better' ships a silent regression — mitigated by building the harness as rung one",
+      "One opaque score: a single end-to-end number that can't localise whether retrieval, routing, or generation failed — mitigated by per-component scoring",
+      "Numeric rubrics that drift between runs and raters — mitigated by binary pass/fail + a critique",
+      "Cost estimated from the visible call only, hiding the 5-10x from judge/retry/sub-agent calls — mitigated by trace-derived cost-per-task",
+      "Gaming the target by writing easy questions — mitigated by hardening the data and keeping adversarial probes"
+    ],
+    "rejected_alternatives": [
+      "Eyeball testing / vibes — rejected: not reproducible, not a gate; flip never for anything shipping to users",
+      "LLM-as-judge for the headline numbers without calibration — flip to deterministic scorers for gated metrics; if a judged metric is added, label it judged and report its calibration rate"
+    ],
+    "tags": ["evals", "golden-set", "binary-rubric", "per-component", "cost-per-task", "ci-gate", "regression", "critique-shadowing", "adversarial-probes", "trace-derived-cost"],
+    "cost_envelope": "The eval run's tokens (a few euros for dozens of cases) — the recurring price of changing anything safely."
+  }
+]

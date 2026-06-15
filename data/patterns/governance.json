@@ -1,0 +1,109 @@
+[
+  {
+    "id": "pat-gov-prohibited",
+    "title": "EU AI Act: Prohibited-practice tier (Article 5) — the redesign-or-kill gate",
+    "category": "governance",
+    "summary": "How a use case lands in the Article 5 unacceptable-risk tier (manipulation, exploitation of vulnerabilities, social scoring, untargeted facial scraping, workplace/education emotion inference, certain biometric categorisation and real-time public biometric ID), what that bans, and why you screen for it before you architect anything.",
+    "body": "Use this when a CTO describes a system that scores or ranks people by behaviour, nudges them subliminally, infers emotion in the workplace or a classroom, scrapes faces to build a recognition database, or does real-time remote biometric identification in public. The tell: the value proposition depends on a capability the Act bans outright — there is no documentation, conformity assessment, or human-in-the-loop that buys it back. This is a kill-or-redesign gate, not a controls problem. Run it as the first node in triage, before high-risk obligations are even loaded, because a prohibited finding short-circuits everything downstream. The design-input point is sharp here: discovering Article 5 exposure in a launch review means the core mechanic is illegal and the build is sunk cost; discovering it in a one-paragraph intake screen costs an afternoon. Most prohibited practices have a lawful adjacent design — one-to-one biometric verification instead of categorisation, fact-based human-assisted risk assessment instead of personality-only profiling — so the output is usually 'rescope and re-triage,' not 'abandon.' Cost envelope: a mis-tier here is the most expensive error in the whole regime — penalties reach the top fine band (low tens of millions of EUR or a mid-single-digit percentage of worldwide turnover) plus forced withdrawal of a shipped product.",
+    "failure_modes": [
+      "Treating a banned mechanic as a 'guardrail problem' — adding human oversight, disclosure, or a reranker to a practice that is prohibited regardless of mitigations, which buys nothing",
+      "Reasoning from a vague pitch and missing that the marketed feature (e.g. emotion-aware coaching at work) is the exact thing Article 5 names, because the intake text used a euphemism",
+      "Catching the prohibition only at a pre-launch legal review, after the architecture and data pipeline are built around the illegal capability"
+    ],
+    "rejected_alternatives": [
+      "Folding prohibited cases into the high-risk checklist and 'over-complying' with Articles 9–15 — rejected because no amount of risk management legalises a banned practice; flip only if a narrow statutory exception genuinely applies (e.g. a tightly-scoped law-enforcement carve-out) and a qualified lawyer signs off",
+      "Letting the LLM both detect and silently auto-route prohibited cases without a human gate — rejected because a false-negative here is catastrophic; flip never for this tier"
+    ],
+    "tags": [
+      "eu-ai-act",
+      "article-5",
+      "prohibited",
+      "unacceptable-risk",
+      "governance",
+      "biometric",
+      "social-scoring",
+      "compliance-by-design"
+    ]
+  },
+  {
+    "id": "pat-gov-high-risk",
+    "title": "EU AI Act: High-risk tier (Article 6 / Annex III) — the heavy-obligations bucket",
+    "category": "governance",
+    "summary": "How a use case lands in the high-risk tier — either as a safety component under Annex I product law, or by falling in an Annex III domain (employment, education, credit/essential services, critical infrastructure, law enforcement, migration, biometrics) without an Article 6(3) derogation — and the full provider obligation stack it triggers.",
+    "body": "Reach for this when the system decides or materially influences something consequential about a person: who gets hired, graded, lent to, admitted, triaged, or policed — or when it is a safety component of a regulated product. The tell is impact on access to rights, livelihood, or safety, in a named Annex III domain. This is the tier that carries the heavy obligation stack: a lifecycle risk-management system (Art 9), data governance on training/validation/test sets (Art 10), technical documentation before market placement (Art 11), automatic event logging (Art 12), transparency and instructions for use (Art 13), effective human oversight with the ability to intervene/override/interrupt (Art 14), accuracy-robustness-cybersecurity (Art 15), conformity assessment and CE marking with EU-database registration, plus deployer duties (Art 26). The Article 6(3) derogation is the live argument: narrow procedural tasks, improving a completed human activity, detecting deviations, or preparatory tasks can drop a system out — but profiling of natural persons always pulls it back in. The design-input point dominates this tier: Articles 12, 14, and 15 are architecture (durable logging, interrupt+checkpointer HITL, eval-backed accuracy thresholds), not paperwork — retrofitting human oversight and traceability into a system that wasn't built for them is a partial rebuild. Cost envelope: months of conformity work and ongoing post-market monitoring; second-band penalties for non-compliance.",
+    "failure_modes": [
+      "Assuming an Annex III domain is automatically high-risk and skipping the Article 6(3) derogation analysis (or the reverse — claiming the derogation while the system profiles people, which voids it)",
+      "Designing oversight as a post-hoc dashboard rather than a real interrupt point, so 'human oversight' can't actually stop or reverse a decision when Article 14 demands it",
+      "Building logging and traceability as an afterthought, then being unable to produce the Article 11/12 technical documentation and event history a conformity assessment requires"
+    ],
+    "rejected_alternatives": [
+      "Self-classifying as limited-risk to dodge the obligation stack — rejected because a wrong downgrade in an Annex III domain is exactly the high-penalty scenario; flip only on a documented Article 6(3) derogation that survives the profiling carve-out",
+      "Treating the deployer role as obligation-free because 'we only use a vendor system' — rejected because Article 26 imposes real deployer duties; flip never, though the provider/deployer split changes which duties land where"
+    ],
+    "tags": [
+      "eu-ai-act",
+      "article-6",
+      "annex-iii",
+      "high-risk",
+      "conformity-assessment",
+      "human-oversight",
+      "ce-marking",
+      "risk-management",
+      "governance"
+    ]
+  },
+  {
+    "id": "pat-gov-limited",
+    "title": "EU AI Act: Limited-risk tier (Article 50) — transparency duties only",
+    "category": "governance",
+    "summary": "How a use case lands in the limited-risk / transparency tier — chatbots and conversational agents, AI-generated or manipulated content, deepfakes, and emotion-recognition/biometric-categorisation disclosure — and why the obligations are disclosure-and-labelling, not a conformity regime.",
+    "body": "Use this for the large middle of generative and conversational AI: an LLM assistant a user talks to, a system that produces synthetic audio/image/video/text, a deepfake, or a feature that does emotion recognition or biometric categorisation outside the prohibited and high-risk contexts. The tell: the system interacts with or generates content for people, but does not make a consequential Annex III decision about them. The obligations are narrow and concrete — tell people they're interacting with an AI unless it's obvious (Art 50(1)); mark machine-generated content as artificial in a machine-readable way where feasible (Art 50(2)); disclose emotion-recognition/biometric-categorisation exposure and handle the data under GDPR (Art 50(3)); clearly label deepfakes (Art 50(4)). No risk-management system, no conformity assessment, no CE marking. The design-input point here is cheap-but-load-bearing: provenance watermarking, content-credential metadata, and an 'AI' disclosure affordance are trivial if designed in at the generation/UI layer and awkward to bolt on after a model and frontend ship. The frequent error is over-classifying — assuming any LLM in the stack is high-risk — which burns months on conformity work the Act doesn't require; the opposite error is forgetting that a limited-risk chatbot wired into a credit or hiring decision inherits the high-risk tier of that decision. Cost envelope: low — disclosure UX plus content labelling, no notified-body involvement.",
+    "failure_modes": [
+      "Over-classifying every generative or conversational feature as high-risk and incurring conformity cost the Act never asked for",
+      "Under-classifying by ignoring the deployment context — a 'chatbot' that screens job applicants or triages benefits is high-risk via the underlying decision, not limited-risk",
+      "Treating watermarking/disclosure as a launch-checklist line item, then finding the model and frontend can't emit machine-readable provenance without rework"
+    ],
+    "rejected_alternatives": [
+      "Skipping disclosure on the grounds that 'users can obviously tell it's a bot' — rejected unless obviousness is genuine and documented; flip only when the AI nature is unmistakable from context (Art 50(1)'s own exception)",
+      "Bundling limited-risk transparency into a single generic 'AI policy' page instead of in-context labelling — rejected because Article 50 wants disclosure at the point of interaction/content; flip only where a regulator-accepted equivalent surfaces the same information"
+    ],
+    "tags": [
+      "eu-ai-act",
+      "article-50",
+      "limited-risk",
+      "transparency",
+      "deepfake",
+      "watermarking",
+      "chatbot-disclosure",
+      "provenance",
+      "governance"
+    ]
+  },
+  {
+    "id": "pat-gov-minimal",
+    "title": "EU AI Act: Minimal-risk tier — no specific obligations, but re-triage on drift",
+    "category": "governance",
+    "summary": "How a use case lands in the minimal-risk tier (everything outside Articles 5, 6/Annex III, and 50 — spam filters, recommendation/ranking, internal analytics, most back-office ML), what still applies (GDPR, sector law, voluntary codes), and why a minimal classification is a fact about today's design, not a permanent grant.",
+    "body": "Use this as the default landing zone: spam and fraud filters, search ranking and recommendation, demand forecasting, internal copilots over non-personal data, most back-office and product-analytics ML. The tell: no banned mechanic, no consequential Annex III decision about a person, no human-facing interaction or synthetic-content generation that triggers Article 50. The Act imposes no specific obligations here — but 'minimal under the AI Act' is not 'unregulated.' GDPR still governs any personal data, consumer-protection and sector rules still bind, and the EU encourages voluntary codes of conduct; adopting transparency, logging, or oversight practices ahead of need is cheap insurance against scope drift. The design-input point is about durability of the classification, not heavy controls: minimal is a snapshot of the current intended purpose, and the cheapest governance move is to wire a re-triage trigger to any material change — a new data source, a new audience, a feature that starts influencing a hiring/credit/safety decision, or profiling creeping in. A system that was minimal can silently become high-risk or limited-risk the day its purpose shifts, and the failure is discovering that in an audit rather than at the design change. Cost envelope: effectively zero AI-Act-specific cost; the only spend is the discipline of re-classifying when the use case moves.",
+    "failure_modes": [
+      "Treating a minimal classification as permanent and skipping re-triage when the system's purpose, data, or audience changes — silent drift into high-risk or limited-risk",
+      "Reading 'minimal risk under the AI Act' as 'no compliance at all' and neglecting GDPR, sector law, or consumer-protection duties that still apply",
+      "Letting profiling or a consequential decision creep into a back-office model without anyone re-running the tier check, voiding the original minimal finding"
+    ],
+    "rejected_alternatives": [
+      "Applying high-risk-style controls 'to be safe' across all minimal systems — rejected as governance theatre that burns budget and slows shipping; flip only where a voluntary code or a near-term roadmap change makes pre-investment in oversight genuinely cheaper than retrofitting",
+      "Classifying once at launch and never revisiting — rejected because tier is a function of intended purpose, which mutates; flip never, the re-triage trigger is the whole point of this tier"
+    ],
+    "tags": [
+      "eu-ai-act",
+      "minimal-risk",
+      "scope-drift",
+      "re-triage",
+      "gdpr",
+      "voluntary-codes",
+      "recommendation",
+      "back-office-ml",
+      "governance"
+    ]
+  }
+]

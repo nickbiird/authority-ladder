@@ -1,0 +1,218 @@
+[
+  {
+    "id": "core-01",
+    "split": "core",
+    "title": "Flag overdue invoices",
+    "description": "We want to automatically flag any customer invoice that is more than 30 days past its due date so finance can chase it.",
+    "expected": { "ai_or_not": "none", "autonomy_max": "act", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-none"],
+    "note": "A WHERE clause, not a classifier. The credibility-move 'none' case."
+  },
+  {
+    "id": "core-02",
+    "split": "core",
+    "title": "Predict customer churn",
+    "description": "Using two years of CRM history — usage, tenure, support tickets, plan — predict which accounts are likely to cancel next quarter, with a score and the drivers.",
+    "expected": { "ai_or_not": "classical_ml", "autonomy_max": "act", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-classical-ml"],
+    "note": "Tabular features, labelled outcome, need calibrated probabilities + feature importances — gradient-boosted trees, not an LLM."
+  },
+  {
+    "id": "core-03",
+    "split": "core",
+    "title": "Summarise inbound support tickets",
+    "description": "For each new support ticket, produce a two-line summary so agents can triage their queue faster. The full ticket text is right there in the system.",
+    "expected": { "ai_or_not": "single_llm", "autonomy_max": "act", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-single-llm", "pat-arch-single-llm-extraction"],
+    "note": "Stateless transform of text already in hand — one LLM call."
+  },
+  {
+    "id": "core-04",
+    "split": "core",
+    "title": "Answer HR-policy questions with citations",
+    "description": "Let employees ask questions in plain language about our internal HR policies (holiday, expenses, parental leave) and get an answer that cites the exact policy document and clause.",
+    "expected": { "ai_or_not": "rag", "autonomy_max": "draft", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-rag", "pat-arch-rag-over-docs"],
+    "note": "Answer lives in private documents, must be cited — RAG."
+  },
+  {
+    "id": "core-05",
+    "split": "core",
+    "title": "Natural-language analytics over the warehouse",
+    "description": "Let business users ask questions of our data warehouse in plain English and get the numbers back, without writing SQL. The data is in governed tables.",
+    "expected": { "ai_or_not": "rag", "autonomy_max": "draft", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-arch-nl2sql-readonly"],
+    "note": "Knowledge lives in a SQL schema, not documents — NL2SQL over a read-only sandbox."
+  },
+  {
+    "id": "core-06",
+    "split": "core",
+    "title": "Autonomous incident investigation",
+    "description": "When a production alert fires, have the system investigate by querying logs, then the database, then deciding whether to open a ticket and page on-call — the path depends on what it finds at each step.",
+    "expected": { "ai_or_not": "agent", "autonomy_max": "act_with_approval", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-agent", "pat-arch-human-gated-write"],
+    "note": "Genuinely data-dependent multi-step tool use — a real agent; paging/ticketing is gated."
+  },
+  {
+    "id": "core-07",
+    "split": "core",
+    "title": "Monthly revenue dashboard",
+    "description": "Build a dashboard showing revenue by region and product line for the month, with a comparison to last month.",
+    "expected": { "ai_or_not": "none", "autonomy_max": "act", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-none"],
+    "note": "Every metric is a GROUP BY — BI, not AI."
+  },
+  {
+    "id": "core-08",
+    "split": "core",
+    "title": "Auto-tag and route inbound email",
+    "description": "Classify each inbound email by topic (sales, support, billing, spam) and route it to the right team's queue automatically.",
+    "expected": { "ai_or_not": "single_llm", "autonomy_max": "act", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-arch-classification-router", "pat-aon-single-llm"],
+    "note": "Classify-then-route; a misroute is cheap and reversible, so full autonomy is defensible."
+  },
+  {
+    "id": "core-09",
+    "split": "core",
+    "title": "Draft customer-email replies for an agent to send",
+    "description": "Generate a first-draft reply to each customer email so a support agent can review, edit, and send it.",
+    "expected": { "ai_or_not": "single_llm", "autonomy_max": "draft", "risk_tier": "limited" },
+    "relevant_pattern_ids": ["pat-ladder-draft", "pat-arch-single-llm-extraction"],
+    "note": "Reviewable artefact, human commits the send — Draft tier; limited-risk transparency if the customer is told it's AI-assisted."
+  },
+  {
+    "id": "core-10",
+    "split": "core",
+    "title": "Forecast inventory demand",
+    "description": "Predict next month's demand per SKU per warehouse from three years of sales history and seasonality, so we can pre-position stock.",
+    "expected": { "ai_or_not": "classical_ml", "autonomy_max": "act", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-classical-ml"],
+    "note": "Time-series prediction over tabular history — classical ML / forecasting."
+  },
+  {
+    "id": "core-11",
+    "split": "core",
+    "title": "Score and rank job applicants",
+    "description": "Score and rank incoming CVs against the role and surface the top candidates to recruiters, who make the final call.",
+    "expected": { "ai_or_not": "classical_ml", "autonomy_max": "suggest", "risk_tier": "high" },
+    "relevant_pattern_ids": ["pat-gov-high-risk", "pat-ladder-suggest"],
+    "note": "Annex III employment domain, profiles people -> high-risk; cost-of-error high + irreversible influence on livelihood -> Suggest ceiling."
+  },
+  {
+    "id": "core-12",
+    "split": "core",
+    "title": "Citizen behaviour scoring",
+    "description": "Build a system that scores citizens on their everyday behaviour and social trustworthiness to grant or deny access to public services.",
+    "expected": { "ai_or_not": "classical_ml", "autonomy_max": "suggest", "risk_tier": "prohibited" },
+    "relevant_pattern_ids": ["pat-gov-prohibited"],
+    "note": "Social scoring — Article 5 prohibited. Verdict is do_not_build regardless of the build shape."
+  },
+  {
+    "id": "core-13",
+    "split": "core",
+    "title": "Translate product descriptions",
+    "description": "Translate our product catalogue descriptions from English into five European languages for the regional sites.",
+    "expected": { "ai_or_not": "single_llm", "autonomy_max": "draft", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-single-llm", "pat-arch-single-llm-extraction"],
+    "note": "One-shot text-to-text transform, knowledge in-weights — a single LLM call per string."
+  },
+  {
+    "id": "core-14",
+    "split": "core",
+    "title": "Real-time transaction fraud detection",
+    "description": "Score each payment transaction in real time for fraud likelihood from the transaction features and account history, and flag the risky ones for review.",
+    "expected": { "ai_or_not": "classical_ml", "autonomy_max": "suggest", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-classical-ml"],
+    "note": "High-throughput tabular scoring with calibrated probabilities — classical ML / anomaly detection; a false block is costly so it flags for review (suggest)."
+  },
+  {
+    "id": "core-15",
+    "split": "core",
+    "title": "Generate synthetic marketing video",
+    "description": "Generate short AI-produced promotional videos with a synthetic presenter from a script for our social channels.",
+    "expected": { "ai_or_not": "single_llm", "autonomy_max": "draft", "risk_tier": "limited" },
+    "relevant_pattern_ids": ["pat-gov-limited"],
+    "note": "Generative output — synthetic media must be labelled as AI-generated (Article 50 transparency) -> limited-risk."
+  },
+  {
+    "id": "core-16",
+    "split": "core",
+    "title": "Internal research brief from many sources",
+    "description": "Given a question, have the system break it into sub-questions, gather evidence from our internal knowledge sources for each, and synthesise a cited brief.",
+    "expected": { "ai_or_not": "agent", "autonomy_max": "draft", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-arch-multi-agent-research", "pat-aon-agent"],
+    "note": "Decompose -> parallel read-side gathering -> synthesise: the multi-agent research pattern; output is a reviewable brief (draft), no irreversible action."
+  },
+  {
+    "id": "contested-01",
+    "split": "contested",
+    "title": "Predictive maintenance with a separate certified safety cut-off",
+    "description": "Predict which machines need inspection from sensor history. The actual safety shutdown is handled by a separate, independently certified hardware controller — our system only schedules inspections.",
+    "expected": { "ai_or_not": "classical_ml", "autonomy_max": "act_with_approval", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-classical-ml", "pat-gov-high-risk"],
+    "note": "RUBRIC reading: sits near an Annex III safety area but the safety function is a separate certified component, so the Article 6(3) derogation applies -> minimal. Arguable; a reviewer who reads it as a safety component would say high."
+  },
+  {
+    "id": "contested-02",
+    "split": "contested",
+    "title": "Benefits chatbot that also pre-screens eligibility",
+    "description": "A conversational assistant that answers questions about social benefits AND pre-screens whether the person is likely eligible, which caseworkers use to prioritise.",
+    "expected": { "ai_or_not": "rag", "autonomy_max": "suggest", "risk_tier": "high" },
+    "relevant_pattern_ids": ["pat-gov-high-risk", "pat-gov-limited"],
+    "note": "RUBRIC reading: a chatbot looks limited-risk, but pre-screening access to essential services pulls it into Annex III high-risk via the underlying decision."
+  },
+  {
+    "id": "contested-03",
+    "split": "contested",
+    "title": "CV field-extractor that scores nothing",
+    "description": "Parse incoming CVs into structured fields (education, years of experience, skills) to populate the ATS. It does not rank, score, or recommend — a recruiter reads the structured record.",
+    "expected": { "ai_or_not": "single_llm", "autonomy_max": "draft", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-arch-single-llm-extraction", "pat-gov-high-risk"],
+    "note": "RUBRIC reading: an Annex III employment context, but a narrow procedural task that does not profile or score natural persons -> Article 6(3) derogation -> minimal. The over-cautious reading (its sibling core-11) is high; this is the derogation edge."
+  },
+  {
+    "id": "contested-04",
+    "split": "contested",
+    "title": "Emotion-aware coaching at work",
+    "description": "An assistant that infers each employee's emotional state during calls and coaches managers on how to respond.",
+    "expected": { "ai_or_not": "single_llm", "autonomy_max": "suggest", "risk_tier": "prohibited" },
+    "relevant_pattern_ids": ["pat-gov-prohibited"],
+    "note": "RUBRIC reading: emotion recognition in the workplace is an Article 5 prohibited practice (outside narrow medical/safety uses) -> do_not_build."
+  },
+  {
+    "id": "contested-05",
+    "split": "contested",
+    "title": "Auto-approve small refunds",
+    "description": "Let the system automatically approve customer refunds under EUR 50 without a human, and route anything larger to a manager.",
+    "expected": { "ai_or_not": "single_llm", "autonomy_max": "act_with_approval", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-ladder-approve", "pat-ladder-act"],
+    "note": "RUBRIC reading: money moves and it's not trivially reversible, so the defensible ceiling is act_with_approval even under EUR 50 until an override-rate is proven; a reviewer comfortable with the small bounded blast radius would allow act."
+  },
+  {
+    "id": "contested-06",
+    "split": "contested",
+    "title": "Agent that posts to public social media",
+    "description": "An agent that drafts and publishes posts to the company's public social accounts on a schedule, based on a content calendar.",
+    "expected": { "ai_or_not": "agent", "autonomy_max": "act_with_approval", "risk_tier": "limited" },
+    "relevant_pattern_ids": ["pat-arch-human-gated-write", "pat-ladder-approve"],
+    "note": "RUBRIC reading: public publishing is irreversible reputational action -> human-gated write; limited-risk if AI-generated content must be labelled."
+  },
+  {
+    "id": "contested-07",
+    "split": "contested",
+    "title": "Recommend content to users",
+    "description": "Recommend articles and videos to users based on what they and similar users engaged with.",
+    "expected": { "ai_or_not": "classical_ml", "autonomy_max": "act", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-gov-minimal", "pat-aon-classical-ml"],
+    "note": "RUBRIC reading: a recommender over engagement signals is classical ML and minimal-risk; a reviewer might call the modelling 'single_llm' if it were prompt-based, but the canonical build is collaborative filtering."
+  },
+  {
+    "id": "contested-08",
+    "split": "contested",
+    "title": "Knowledge assistant over a long handbook",
+    "description": "Answer questions about our 40-page employee handbook. It rarely changes and easily fits in a modern context window.",
+    "expected": { "ai_or_not": "single_llm", "autonomy_max": "draft", "risk_tier": "minimal" },
+    "relevant_pattern_ids": ["pat-aon-single-llm", "pat-aon-rag"],
+    "note": "RUBRIC reading: a small, static corpus that fits in-context is long-context prompt-stuffing (single_llm), NOT RAG — RAG's retrieval infra is unearned here. The over-engineering trap; a reviewer anticipating corpus growth would say rag."
+  }
+]
