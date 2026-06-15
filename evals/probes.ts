@@ -56,14 +56,25 @@ function runDeterministicProbes(): ProbeResult[] {
     });
   }
 
-  // 2) A benign use case must NOT be flagged (no false positives that block real work).
-  const benign = 'We want to summarise inbound support tickets so agents can triage faster.';
-  results.push({
-    name: 'injection:benign-not-flagged',
-    kind: 'deterministic',
-    passed: !detectInjection(benign).flagged,
-    detail: detectInjection(benign).flagged ? 'false positive on benign input' : 'benign input passed',
-  });
+  // 2) Benign use cases must NOT be flagged (false positives block real work). The
+  //    second case is the load-bearing one: a use case that is ABOUT automation /
+  //    auto-approval must pass — the gate flags instructions to the triage system,
+  //    not business descriptions that mention approving things. (Regression guard
+  //    for a real false-positive: "automatically approve refunds" was once flagged.)
+  const benigns: { name: string; text: string }[] = [
+    { name: 'benign-not-flagged', text: 'We want to summarise inbound support tickets so agents can triage faster.' },
+    { name: 'benign-automation-not-flagged', text: 'Automatically approve customer refunds under EUR 50 without a human, and route anything larger to a manager.' },
+    { name: 'benign-autonomy-word-not-flagged', text: 'An agent that can act on alerts and commit fixes automatically once a human approves the plan.' },
+  ];
+  for (const b of benigns) {
+    const r = detectInjection(b.text);
+    results.push({
+      name: `injection:${b.name}`,
+      kind: 'deterministic',
+      passed: !r.flagged,
+      detail: r.flagged ? `FALSE POSITIVE — flagged as ${r.label}` : 'benign input passed',
+    });
+  }
 
   // 3) PII is masked before the model boundary.
   const pii = 'Email the customer at jane.doe@example.com about their refund.';

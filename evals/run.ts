@@ -59,6 +59,11 @@ async function runCase(c: Case): Promise<Fixture> {
     { configurable: { thread_id: `eval-${c.id}`, auto_approve: true }, recursionLimit: 50 },
   );
   const item = (final.items as RoadmapItem[])[0];
+  if (!item) {
+    // No roadmap item — the case was short-circuited before triage (almost always
+    // a guard rejection). Fail with a clear reason instead of a cryptic null-read.
+    throw new Error(`no roadmap item produced for ${c.id}${final.guardFail ? ` — guard rejected it: ${String(final.guardFail).slice(0, 120)}` : ''}`);
+  }
   const evidence = (final.evidence as { use_case_id: string; passages: { id: string; title: string; text: string }[] }[])
     .filter((e) => e.use_case_id === c.id)
     .flatMap((e) => e.passages);
@@ -88,10 +93,11 @@ interface Split {
   n: number;
   ai_or_not: number;
   risk: number;
-  autonomy_ok: number;
+  golden_ok: number; // agreement with the rubric's per-case autonomy ceiling (accuracy)
+  cost_ok: number; // the deterministic cost-ceiling safety invariant (should == n)
   answer_pass: number;
 }
-const emptySplit = (): Split => ({ n: 0, ai_or_not: 0, risk: 0, autonomy_ok: 0, answer_pass: 0 });
+const emptySplit = (): Split => ({ n: 0, ai_or_not: 0, risk: 0, golden_ok: 0, cost_ok: 0, answer_pass: 0 });
 
 function scoreFixtures(fixtures: Fixture[]) {
   const splits: Record<'core' | 'contested', Split> = { core: emptySplit(), contested: emptySplit() };
@@ -103,14 +109,17 @@ function scoreFixtures(fixtures: Fixture[]) {
     sp.n += 1;
     if (s.ai_or_not_match) sp.ai_or_not += 1;
     if (s.risk_match) sp.risk += 1;
-    if (s.autonomy_ceiling_respected) sp.autonomy_ok += 1;
+    if (s.within_golden_ceiling) sp.golden_ok += 1;
+    if (s.cost_ceiling_respected) sp.cost_ok += 1;
     if (f.answer_verdict.verdict === 'pass') sp.answer_pass += 1;
     allUsage = allUsage.concat(f.usage ?? []);
     if (!s.ai_or_not_match)
       failures.push(`✗ ${f.id} ai_or_not: expected ${f.expected.ai_or_not}, got ${f.got.ai_or_not}`);
     if (!s.risk_match) failures.push(`✗ ${f.id} risk: expected ${f.expected.risk_tier}, got ${f.got.risk_tier}`);
-    if (!s.autonomy_ceiling_respected)
-      failures.push(`✗ ${f.id} autonomy: ${f.got.autonomy_tier} exceeds ceiling (max ${f.expected.autonomy_max}, cost ${f.got.cost_of_error})`);
+    if (!s.cost_ceiling_respected)
+      failures.push(`✗✗ ${f.id} SAFETY: ${f.got.autonomy_tier} exceeds the cost-of-error ceiling (cost ${f.got.cost_of_error}) — the clamp failed, this is a real regression`);
+    else if (!s.within_golden_ceiling)
+      failures.push(`✗ ${f.id} autonomy-accuracy: recommended ${f.got.autonomy_tier} > rubric max ${f.expected.autonomy_max} (a stricter per-case reading; cost-ceiling still respected)`);
     if (f.answer_verdict.verdict === 'fail') failures.push(`✗ ${f.id} answer-judge: ${f.answer_verdict.critique}`);
   }
   const cost = summarizeUsage(allUsage);
@@ -131,7 +140,8 @@ function report(fixtures: Fixture[], mode: string) {
     console.log(`[${k}] n=${s.n}`);
     console.log(`  ai_or_not   ${pct(s.ai_or_not, s.n)}   (${s.ai_or_not}/${s.n})`);
     console.log(`  risk_tier   ${pct(s.risk, s.n)}   (${s.risk}/${s.n})`);
-    console.log(`  autonomy-ceiling respected   ${pct(s.autonomy_ok, s.n)}   (${s.autonomy_ok}/${s.n})  [safety property]`);
+    console.log(`  cost-ceiling respected   ${pct(s.cost_ok, s.n)}   (${s.cost_ok}/${s.n})  [deterministic safety invariant — GATED, should be 100%]`);
+    console.log(`  autonomy vs rubric max   ${pct(s.golden_ok, s.n)}   (${s.golden_ok}/${s.n})  [accuracy — not gated]`);
     console.log(`  answer-judge ${pct(s.answer_pass, s.n)}   (${s.answer_pass}/${s.n})  [model-judged, not gated]`);
   }
   if (cost.calls) console.log(`\nCost: €${cost.eur.toFixed(4)} total, €${costPerCase}/case (${cost.calls} calls, ${cost.inputTokens + cost.outputTokens} tokens)`);
@@ -154,7 +164,7 @@ function writeScorecard(fixtures: Fixture[], totalCases?: number) {
       core: { ...splits.core, ai_or_not_pct: splits.core.ai_or_not / (splits.core.n || 1), risk_pct: splits.core.risk / (splits.core.n || 1) },
       contested: { ...splits.contested, ai_or_not_pct: splits.contested.ai_or_not / (splits.contested.n || 1), risk_pct: splits.contested.risk / (splits.contested.n || 1) },
     },
-    autonomy_ceiling_respected_all: fixtures.every((f) => scoreDiagnosis(f.got as never, f.expected).autonomy_ceiling_respected),
+    cost_ceiling_respected_all: fixtures.every((f) => scoreDiagnosis(f.got as never, f.expected).cost_ceiling_respected),
     cost_eur_total: cost.eur,
     cost_eur_per_case: costPerCase,
   };
@@ -174,13 +184,13 @@ async function main() {
     }
     const fixtures: Fixture[] = JSON.parse(readFileSync(FIXTURES, 'utf8'));
     const { splits } = report(fixtures, 'replay — committed fixtures, zero model calls');
-    // CI gate: the deterministic safety property must hold for every case.
-    const allCeilingOk = fixtures.every((f) => scoreDiagnosis(f.got as never, f.expected).autonomy_ceiling_respected);
-    // CI gate: core ai_or_not accuracy must not regress below a floor.
+    // CI gate 1: the deterministic safety invariant (cost-ceiling clamp) holds for EVERY case.
+    const allCostCeilingOk = fixtures.every((f) => scoreDiagnosis(f.got as never, f.expected).cost_ceiling_respected);
+    // CI gate 2: core ai_or_not accuracy must not regress below the floor.
     const FLOOR = 0.7;
     const coreAcc = splits.core.n ? splits.core.ai_or_not / splits.core.n : 1;
-    const pass = allCeilingOk && coreAcc >= FLOOR;
-    console.log(`\nCI gate: autonomy-ceiling-all=${allCeilingOk}, core ai_or_not ${(coreAcc * 100).toFixed(1)}% >= ${FLOOR * 100}% -> ${pass ? 'PASS' : 'FAIL'}`);
+    const pass = allCostCeilingOk && coreAcc >= FLOOR;
+    console.log(`\nCI gate: cost-ceiling-all=${allCostCeilingOk}, core ai_or_not ${(coreAcc * 100).toFixed(1)}% >= ${FLOOR * 100}% -> ${pass ? 'PASS' : 'FAIL'}`);
     if (!pass) process.exit(1);
     return;
   }
@@ -189,7 +199,14 @@ async function main() {
     console.error(`Live/record runs need ${MODEL_KEY_VAR} (LLM_PROVIDER=${PROVIDER}). For a zero-key gate use: npx tsx evals/run.ts --replay`);
     process.exit(1);
   }
-  const cases = loadCases();
+  // --only=id,id re-runs just those cases and MERGES them into the committed
+  // fixtures (replacing the named ones), so fixing a few cases doesn't cost a
+  // full re-run. The scorecard is then computed over the full merged set.
+  const onlyArg = args.find((a) => a.startsWith('--only='));
+  const onlyIds = onlyArg ? onlyArg.slice('--only='.length).split(',').map((s) => s.trim()).filter(Boolean) : null;
+  const allCases = loadCases();
+  const cases = onlyIds ? allCases.filter((c) => onlyIds.includes(c.id)) : allCases;
+  if (onlyIds) console.log(`--only: re-running ${cases.length} case(s) [${cases.map((c) => c.id).join(', ')}] and merging into committed fixtures.`);
   const fixtures: Fixture[] = [];
   const skipped: string[] = [];
   for (const c of cases) {
@@ -217,19 +234,32 @@ async function main() {
     process.exit(1);
   }
 
-  const partial = fixtures.length < cases.length;
-  report(fixtures, record ? `record — live run (${fixtures.length}/${cases.length}${partial ? ', PARTIAL' : ''})` : 'live');
-  writeScorecard(fixtures, cases.length);
+  // Merge re-run cases into the committed fixtures when using --only.
+  let finalFixtures = fixtures;
+  if (onlyIds && existsSync(FIXTURES)) {
+    const existing: Fixture[] = JSON.parse(readFileSync(FIXTURES, 'utf8'));
+    const fresh = new Map(fixtures.map((f) => [f.id, f]));
+    const merged = existing.map((f) => fresh.get(f.id) ?? f); // replace re-run ones in place
+    for (const f of fixtures) if (!existing.some((e) => e.id === f.id)) merged.push(f); // append genuinely-new ids
+    const order = new Map(allCases.map((c, i) => [c.id, i]));
+    merged.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    finalFixtures = merged;
+  }
+
+  const total = allCases.length;
+  const partial = finalFixtures.length < total;
+  report(finalFixtures, record ? `record — ${onlyIds ? 'merged ' : ''}live run (${finalFixtures.length}/${total}${partial ? ', PARTIAL' : ''})` : 'live');
+  writeScorecard(finalFixtures, total);
   if (skipped.length) {
     console.log(`\n${skipped.length} case(s) skipped (honest — not silently dropped):`);
     skipped.forEach((s) => console.log('  ' + s));
   }
   if (record) {
     if (!existsSync(path.dirname(FIXTURES))) mkdirSync(path.dirname(FIXTURES), { recursive: true });
-    writeFileSync(FIXTURES, JSON.stringify(fixtures, null, 2) + '\n');
+    writeFileSync(FIXTURES, JSON.stringify(finalFixtures, null, 2) + '\n');
     console.log(
-      `\nRecorded ${fixtures.length}/${cases.length} fixtures -> ${path.relative(process.cwd(), FIXTURES)} (the CI replay gate now activates).` +
-        (partial ? ' PARTIAL run — re-run with credit to record the rest; the scorecard notes the count.' : ''),
+      `\nRecorded ${finalFixtures.length}/${total} fixtures -> ${path.relative(process.cwd(), FIXTURES)} (the CI replay gate now activates).` +
+        (partial ? ' PARTIAL — re-run the missing cases to complete; the scorecard notes the count.' : ''),
     );
   }
 }

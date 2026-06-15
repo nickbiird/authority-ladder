@@ -83,6 +83,11 @@ function makeModel(model: string) {
  * The shape (`{parsed, raw}` + `raw.usage_metadata`) is identical across both
  * providers, so callers are provider-agnostic.
  */
+type RawRes = {
+  parsed: unknown;
+  raw: { usage_metadata?: { input_tokens?: number; output_tokens?: number }; tool_calls?: unknown; content?: unknown };
+};
+
 export async function structuredCall<T extends z.ZodTypeAny>(opts: {
   model: 'fast' | 'deep';
   node: string;
@@ -92,19 +97,39 @@ export async function structuredCall<T extends z.ZodTypeAny>(opts: {
 }): Promise<{ value: z.infer<T>; usage: UsageEntry }> {
   const modelName = opts.model === 'fast' ? FAST_MODEL : DEEP_MODEL;
   const llm = makeModel(modelName).withStructuredOutput(opts.schema, { includeRaw: true });
-  const res = (await llm.invoke([
-    ['system', opts.system],
-    ['human', opts.user],
-  ])) as { parsed: z.infer<T>; raw: { usage_metadata?: { input_tokens?: number; output_tokens?: number } } };
 
-  const meta = res.raw?.usage_metadata ?? {};
+  // includeRaw makes a structured-output failure (no tool call, or args that fail
+  // Zod validation) come back as `parsed: null` instead of throwing — which would
+  // otherwise propagate as a cryptic null-read three nodes downstream. So we treat
+  // null as a transient failure: retry once with an explicit nudge, metering both
+  // attempts; if it is still null, throw an EXPLAINABLE error naming the node.
+  let inTok = 0;
+  let outTok = 0;
+  const attempt = async (system: string): Promise<RawRes> => {
+    const r = (await llm.invoke([
+      ['system', system],
+      ['human', opts.user],
+    ])) as RawRes;
+    const m = r.raw?.usage_metadata ?? {};
+    inTok += m.input_tokens ?? 0;
+    outTok += m.output_tokens ?? 0;
+    return r;
+  };
+
+  let res = await attempt(opts.system);
+  if (res.parsed == null) {
+    res = await attempt(
+      opts.system +
+        '\n\nIMPORTANT: respond ONLY by calling the provided structured tool, with every required field populated. Do not reply with prose.',
+    );
+  }
+  if (res.parsed == null) {
+    const dump = JSON.stringify(res.raw?.tool_calls ?? res.raw?.content ?? '')?.slice(0, 200);
+    throw new Error(`structured output was null for node "${opts.node}" (model ${modelName}) after one retry — the model did not emit a valid tool call. raw=${dump}`);
+  }
+
   return {
-    value: res.parsed,
-    usage: {
-      model: modelName,
-      node: opts.node,
-      inputTokens: meta.input_tokens ?? 0,
-      outputTokens: meta.output_tokens ?? 0,
-    },
+    value: res.parsed as z.infer<T>,
+    usage: { model: modelName, node: opts.node, inputTokens: inTok, outputTokens: outTok },
   };
 }

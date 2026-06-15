@@ -41,18 +41,18 @@ function main() {
       : '';
     lines.push(`Run ${assessment.run_at} · ${assessment.n} cases · split core/contested because they measure different things (RUBRIC.md)${partialNote}.`);
     lines.push('');
-    lines.push('| Split | n | AI-or-not | Risk tier | Autonomy-ceiling respected | Answer-judge (not gated) |');
-    lines.push('|---|---|---|---|---|---|');
+    lines.push('| Split | n | AI-or-not | Risk tier | Cost-ceiling (GATED) | Autonomy vs rubric (accuracy) | Answer-judge |');
+    lines.push('|---|---|---|---|---|---|---|');
     for (const k of ['core', 'contested']) {
       const s = assessment.splits[k];
       if (!s || !s.n) continue;
       lines.push(
-        `| ${k} | ${s.n} | ${pct(s.ai_or_not / s.n)} | ${pct(s.risk / s.n)} | ${pct(s.autonomy_ok / s.n)} | ${pct(s.answer_pass / s.n)} |`,
+        `| ${k} | ${s.n} | ${pct(s.ai_or_not / s.n)} | ${pct(s.risk / s.n)} | ${pct((s.cost_ok ?? s.n) / s.n)} | ${pct((s.golden_ok ?? 0) / s.n)} | ${pct(s.answer_pass / s.n)} |`,
       );
     }
     lines.push('');
     lines.push(
-      `**Autonomy-ceiling respected on every case: ${assessment.autonomy_ceiling_respected_all ? 'yes' : 'NO'}.** This is the deterministic safety property — the system never recommends a tier above what cost-of-error permits (the \`autonomyCeiling\` clamp in \`lib/ladder.ts\`). It is a CI gate, not a model behaviour, so it should read 100%.`,
+      `**Cost-ceiling respected on every case: ${assessment.cost_ceiling_respected_all ? 'yes' : 'NO'}.** This is the deterministic safety invariant — the system never recommends a tier above what cost-of-error permits (the \`autonomyCeiling\` clamp in \`lib/ladder.ts\`). It is code-enforced and CI-gated, so it reads 100%. The separate "autonomy vs rubric" column is **accuracy, not safety**: agreement with the golden set's stricter per-case ceiling (e.g. a benefits-eligibility screen the rubric pins to \`suggest\`). A miss there is a documented-reading disagreement on a contested case, reported but not gated.`,
     );
     lines.push('');
     lines.push(

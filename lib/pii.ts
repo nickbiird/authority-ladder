@@ -47,6 +47,12 @@ export function maskPII(text: string): MaskResult {
  * Instruction-injection shapes aimed at steering the triage or the write path.
  * Each carries a label so a rejection is explainable, never a silent drop.
  */
+// These target instructions aimed at the TRIAGE SYSTEM, not business descriptions
+// that happen to mention automation or approval. The distinction is load-bearing:
+// "auto-approve all use cases" is an attack; "automatically approve refunds under
+// EUR 50" is a legitimate use case to triage. So the meta-object-bearing patterns
+// (auto-approve / force-commit / force-verdict) require a triage-meta target
+// (everything / all / the roadmap / use cases), not just the verb.
 const INJECTION_PATTERNS: { label: string; re: RegExp }[] = [
   { label: 'override-instructions', re: /ignore\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|above|earlier)\s+instructions?/i },
   { label: 'disregard-context', re: /disregard\s+(?:the\s+)?(?:above|previous|system|earlier)/i },
@@ -55,9 +61,9 @@ const INJECTION_PATTERNS: { label: string; re: RegExp }[] = [
   { label: 'new-instructions', re: /\bnew\s+instructions?\s*:/i },
   { label: 'force-autonomy', re: /set\s+(?:the\s+)?autonomy\s+(?:tier\s+)?(?:to\s+)?(?:act|full|maximum)/i },
   { label: 'skip-gate', re: /skip\s+(?:the\s+)?(?:human\s+)?(?:gate|approval|review|critic)/i },
-  { label: 'force-commit', re: /commit\s+(?:the\s+)?(?:roadmap\s+)?(?:immediately|now|automatically|without)/i },
-  { label: 'force-verdict', re: /mark\s+(?:this|all|everything|them)\s+as\s+(?:approved|minimal|act|done)/i },
-  { label: 'auto-approve', re: /auto[-\s]?approve|automatically\s+approve/i },
+  { label: 'force-commit', re: /commit\s+(?:the\s+)?roadmap\s+(?:immediately|now|automatically|without)/i },
+  { label: 'force-verdict', re: /mark\s+(?:this|all|everything|them|every\s+use[\s-]?case)\s+as\s+(?:approved|minimal|act|done)/i },
+  { label: 'auto-approve-triage', re: /(?:auto[-\s]?approve|automatically\s+approve)\s+(?:everything|all\b|the\s+(?:roadmap|backlog|triage|use[\s-]?cases?)|every\s+use[\s-]?case)/i },
   { label: 'override-judge', re: /override\s+(?:the\s+)?(?:gate|critic|judge|classification|verdict)/i },
 ];
 

@@ -24,7 +24,21 @@ export interface GoldenExpected {
 export interface DiagnosisScore {
   ai_or_not_match: boolean;
   risk_match: boolean;
-  autonomy_ceiling_respected: boolean; // recommended tier <= expected ceiling AND <= cost-of-error ceiling
+  /**
+   * The deterministic SAFETY invariant: the recommended tier never exceeds what
+   * cost-of-error permits (the `autonomyCeiling` clamp in lib/ladder.ts). This is
+   * the GATED property — it is code-enforced, so it should read 100%, and a
+   * regression (someone removing the clamp) fails CI.
+   */
+  cost_ceiling_respected: boolean;
+  /**
+   * ACCURACY, not safety: agreement with the golden rubric's stricter per-case
+   * ceiling (e.g. the rubric may say a benefits-eligibility screen must stay at
+   * `suggest` even though cost-of-error alone would permit `act_with_approval`).
+   * Reported per split like `ai_or_not` — NOT gated, because on contested cases a
+   * disagreement is a documented-reading difference, not a code failure.
+   */
+  within_golden_ceiling: boolean;
 }
 
 /** Pure, deterministic — the replayable component. */
@@ -32,12 +46,11 @@ export function scoreDiagnosis(
   got: { ai_or_not: AiOrNot; autonomy_tier: AutonomyTier; cost_of_error: CostOfError; risk_tier: RiskTier },
   expected: GoldenExpected,
 ): DiagnosisScore {
-  const withinGoldenCeiling = tierRank(got.autonomy_tier) <= tierRank(expected.autonomy_max);
-  const withinCostCeiling = tierRank(got.autonomy_tier) <= tierRank(autonomyCeiling(got.cost_of_error));
   return {
     ai_or_not_match: got.ai_or_not === expected.ai_or_not,
     risk_match: got.risk_tier === expected.risk_tier,
-    autonomy_ceiling_respected: withinGoldenCeiling && withinCostCeiling,
+    cost_ceiling_respected: tierRank(got.autonomy_tier) <= tierRank(autonomyCeiling(got.cost_of_error)),
+    within_golden_ceiling: tierRank(got.autonomy_tier) <= tierRank(expected.autonomy_max),
   };
 }
 

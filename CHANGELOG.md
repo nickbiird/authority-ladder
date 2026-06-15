@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-06-15 — classification scorecard recorded on Claude (24/24)
+
+Recorded the full assessment scorecard live on Anthropic (Haiku 4.5 / Sonnet 4.6) and fixed five real bugs that only surfaced by running against the live API — each with a regression guard.
+
+### Scorecard (committed, `evals/results/assessment-scorecard.json`)
+- Core AI-or-not **75%** (12/16), contested 50% (4/8) — honest hard-set numbers (~70% is the calibration target; 100% would mean the set is too easy).
+- **Cost-ceiling safety invariant 100%** on all 24 (the code-enforced clamp). Answer-judge 94% core / 88% contested. Risk-tier 56% core (the weakest dimension, disclosed).
+- **€0.128/case**, 155 metered calls. Replay CI gate (cost-ceiling-all + core AI-or-not ≥ 70%) **passes**.
+
+### Fixed (found by running live)
+- **Silent `parsed:null` from Anthropic structured output** (an occasional validation failure under `includeRaw`) propagated as a cryptic downstream null-read → `structuredCall` now retries once with a nudge, meters both attempts, then throws an *explainable* error naming the node.
+- **Supervisor `reject` on a real use case** produced no roadmap item (crash) → removed `reject` from routing (the deterministic guard already owns true rejection), clamp any stray `reject` to `diagnose_only`, and made `runCase` throw a clear reason instead of a null-read.
+- **Economist/architect refused a *prohibited* practice** (the model declines to price a banned mechanic) → both are skipped for `risk_tier==='prohibited'` (do-not-build; no economics to price) with a deterministic sentinel — also saves two calls per prohibited case.
+- **Injection gate false-flagged a legitimate use case** ("automatically approve refunds under €50" — a use case *about* approval) → tightened the meta-instruction patterns to require a triage-meta target (everything / all / the roadmap / use cases), added a benign-automation regression probe + unit tests (still catches "auto-approve everything").
+- **Scorer conflated two different things** under "autonomy-ceiling" → split into `cost_ceiling_respected` (the deterministic safety invariant — GATED, 100%) and `within_golden_ceiling` (agreement with the rubric's stricter per-case ceiling — accuracy, reported). Aligns the gate with what the README always described. RUBRIC.md updated.
+
+### Added
+- `npm run evals -- --only=id,id` — re-run specific cases and merge into the committed fixtures, so fixing a few cases costs a few cents instead of a full re-run.
+
+### Verified
+- Replay CI gate passes; typecheck clean; tests 22/22; security probes 12/12; retrieval gate green; `next build` green.
+
 ## 2026-06-15 — provider-agnostic reasoning (Anthropic default)
 
 Made the reasoning layer provider-agnostic so the repo runs on a Claude Console

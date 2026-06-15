@@ -25,15 +25,30 @@ The five-way verdict. Scored **exact-match**. The taxonomy:
 | `rag` | Answer lives in private/changing documents (or a SQL schema) and must be grounded/cited. |
 | `agent` | Genuinely data-dependent multi-step tool use that cannot be drawn as a fixed DAG. |
 
-### `autonomy_max` (the safety ceiling)
-The **highest** tier the use case may be granted, given its cost-of-error and
-reversibility. It is scored as a **ceiling, not an exact match**: the system
-passes if its recommended tier does **not exceed** `autonomy_max`. This is the
-deterministic safety property — over-granting authority is the failure that
-matters, and the `autonomyCeiling` clamp in `lib/ladder.ts` enforces it. (Under-
-granting is conservative and allowed.)
+### `autonomy_max` — scored as TWO distinct things
 
-Ladder order: `suggest` < `draft` < `act_with_approval` < `act`.
+Ladder order: `suggest` < `draft` < `act_with_approval` < `act`. Over-granting
+authority is the failure that matters, but "the ceiling" means two different
+things, and the eval scores them separately:
+
+1. **Cost-ceiling (deterministic safety invariant — GATED).** The recommended
+   tier never exceeds what *cost-of-error* permits. This is enforced in code by
+   the `autonomyCeiling` clamp in `lib/ladder.ts`, so it reads **100%** and a
+   regression (someone removing the clamp) fails CI. This is the safety gate.
+
+2. **Agreement with the golden `autonomy_max` (accuracy — NOT gated).** The
+   rubric may pin a case *stricter* than cost-of-error alone would (e.g. a
+   benefits-eligibility screen stays at `suggest` even though its high
+   cost-of-error would generically permit `act_with_approval`, because a human
+   must own access to essential services). Whether the model matches that
+   stricter per-case reading is **accuracy**, reported per split like
+   `ai_or_not`. A miss on a contested case is a documented-reading disagreement,
+   not a code failure — so it is reported, not gated.
+
+Conflating these two is the subtle version of the demo-lies trap: the
+code-enforced safety property is always 100%, and dressing a *rubric
+disagreement* up as a *safety violation* would be as dishonest as the reverse.
+Under-granting (more caution than the rubric) is always allowed.
 
 ### `risk_tier` (the governance input)
 EU AI Act tier — `prohibited` / `high` / `limited` / `minimal`. Scored

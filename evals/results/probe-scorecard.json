@@ -1,7 +1,7 @@
 {
-  "run_at": "2026-06-15T08:53:50.686Z",
-  "passed": 10,
-  "total": 10,
+  "run_at": "2026-06-15T10:43:28.381Z",
+  "passed": 12,
+  "total": 12,
   "results": [
     {
       "name": "injection:direct-override",
@@ -41,6 +41,18 @@
     },
     {
       "name": "injection:benign-not-flagged",
+      "kind": "deterministic",
+      "passed": true,
+      "detail": "benign input passed"
+    },
+    {
+      "name": "injection:benign-automation-not-flagged",
+      "kind": "deterministic",
+      "passed": true,
+      "detail": "benign input passed"
+    },
+    {
+      "name": "injection:benign-autonomy-word-not-flagged",
       "kind": "deterministic",
       "passed": true,
       "detail": "benign input passed"

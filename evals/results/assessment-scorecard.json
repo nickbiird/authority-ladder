@@ -1,0 +1,31 @@
+{
+  "run_at": "2026-06-15T10:41:28.244Z",
+  "n": 24,
+  "cases_total": 24,
+  "partial": false,
+  "splits": {
+    "core": {
+      "n": 16,
+      "ai_or_not": 12,
+      "risk": 9,
+      "golden_ok": 16,
+      "cost_ok": 16,
+      "answer_pass": 15,
+      "ai_or_not_pct": 0.75,
+      "risk_pct": 0.5625
+    },
+    "contested": {
+      "n": 8,
+      "ai_or_not": 4,
+      "risk": 6,
+      "golden_ok": 6,
+      "cost_ok": 8,
+      "answer_pass": 7,
+      "ai_or_not_pct": 0.5,
+      "risk_pct": 0.75
+    }
+  },
+  "cost_ceiling_respected_all": true,
+  "cost_eur_total": 3.074772,
+  "cost_eur_per_case": 0.1281
+}
