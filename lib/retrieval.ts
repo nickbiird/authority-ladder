@@ -46,12 +46,20 @@ function bm25Index(): MiniSearch<CorpusDoc> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Circuit breaker for the dense leg: once the embed endpoint has failed enough
+// times in a row (a daily quota / hard throttle, distinct from generation credit),
+// stop attempting dense for the rest of the process and serve BM25 directly —
+// otherwise every query pays the full backoff before degrading. Reset on success.
+let denseConsecutiveFailures = 0;
+let denseDisabled = false;
+const DENSE_BREAKER_THRESHOLD = 2;
+
 async function embedQuery(query: string, apiKey: string, dims: number): Promise<Float32Array> {
   // The embed endpoint is a raw fetch (the generation calls retry via langchain),
-  // so it gets its own backoff: free-tier RPM throttling returns 429, and a
-  // 24-case eval makes enough query-embeds to trip it. Honour Retry-After,
-  // otherwise exponential backoff. 5 attempts clears the per-minute window.
-  const MAX = 5;
+  // so it gets its own backoff: free-tier RPM throttling returns 429. Honour
+  // Retry-After, otherwise exponential backoff. Kept short (3 attempts) so a hard
+  // quota degrades to BM25 fast rather than stalling each query for a minute.
+  const MAX = 3;
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${apiKey}`,
@@ -113,27 +121,53 @@ export async function retrieve(query: string, opts: RetrieveOptions = {}): Promi
   let mode: RetrievalMode = opts.mode ?? 'hybrid';
   if (mode !== 'bm25-only' && (!emb.present || !apiKey)) mode = 'bm25-only';
 
-  // BM25 leg
-  const bm25Ranked: string[] =
-    mode === 'dense-only'
-      ? []
-      : bm25Index()
-          .search(query)
-          .map((r) => r.id as string)
-          .filter(inScope)
-          .slice(0, 30);
-
-  // dense leg
+  // dense leg (best-effort): the embed endpoint can be throttled/quota-limited
+  // independently of generation. A failed embed must DEGRADE to BM25, not crash
+  // the whole pipeline — dense is an enhancement, BM25 is the always-available
+  // floor. This is the same degradation as the no-key path, just triggered at
+  // call time instead of config time.
   let denseRanked: string[] = [];
-  if (mode !== 'bm25-only') {
-    const qv = await embedQuery(query, apiKey!, emb.dims);
-    denseRanked = [...emb.vectors.entries()]
-      .filter(([id]) => inScope(id))
-      .map(([id, v]) => [id, dot(qv, v)] as const)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 30)
-      .map(([id]) => id);
+  let denseFailed = false;
+  if (mode !== 'bm25-only' && denseDisabled) {
+    denseFailed = true; // breaker open — skip the embed call entirely, serve BM25
+  } else if (mode !== 'bm25-only') {
+    try {
+      const qv = await embedQuery(query, apiKey!, emb.dims);
+      denseRanked = [...emb.vectors.entries()]
+        .filter(([id]) => inScope(id))
+        .map(([id, v]) => [id, dot(qv, v)] as const)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 30)
+        .map(([id]) => id);
+      denseConsecutiveFailures = 0; // success resets the breaker
+    } catch (err) {
+      denseFailed = true;
+      denseConsecutiveFailures += 1;
+      if (denseConsecutiveFailures >= DENSE_BREAKER_THRESHOLD && !denseDisabled) {
+        denseDisabled = true;
+        console.warn(
+          `[retrieval] dense leg disabled for this process after ${denseConsecutiveFailures} consecutive embed failures (likely an embedding quota/throttle); serving BM25-only from here.`,
+        );
+      } else {
+        console.warn(
+          `[retrieval] dense leg unavailable (${err instanceof Error ? err.message : String(err)}); degrading this query to BM25-only.`,
+        );
+      }
+    }
   }
+
+  // BM25 leg: run it for hybrid/bm25-only, OR as the fallback when dense failed.
+  const needBm25 = mode !== 'dense-only' || denseFailed;
+  const bm25Ranked: string[] = needBm25
+    ? bm25Index()
+        .search(query)
+        .map((r) => r.id as string)
+        .filter(inScope)
+        .slice(0, 30)
+    : [];
+
+  // The mode actually served (degraded to bm25-only if the dense leg failed).
+  const servedMode: RetrievalMode = denseFailed ? 'bm25-only' : mode;
 
   // Reciprocal Rank Fusion
   const fused = new Map<string, { score: number; legs: Array<'bm25' | 'dense'> }>();
@@ -154,7 +188,7 @@ export async function retrieve(query: string, opts: RetrieveOptions = {}): Promi
     .map(([id, { score, legs }]) => ({ doc: getDoc(id)!, score, legs }))
     .filter((d) => d.doc !== undefined);
 
-  return { mode, docs };
+  return { mode: servedMode, docs };
 }
 
 /** Flatten retrieved docs into the evidence-passage shape the judge grounds on. */
