@@ -85,6 +85,8 @@ function parseBacklog(raw: string) {
   });
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export default function Home() {
   const [raw, setRaw] = useState(DEMO);
   const [company, setCompany] = useState('A 200-person mid-market services company, first serious AI push.');
@@ -96,6 +98,8 @@ export default function Home() {
   const [hitlMode, setHitlMode] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const [demo, setDemo] = useState(false);
+  const [demoData, setDemoData] = useState<{ company_context: string; items: RoadmapItem[]; summary: Record<string, number>; roadmap: Roadmap } | null>(null);
 
   async function readStream(res: Response, onEvent: (e: any) => void) {
     const reader = res.body!.getReader();
@@ -124,7 +128,7 @@ export default function Home() {
   }
 
   async function run() {
-    setError(null); setItems([]); setRoadmap(null); setPending(null); setLog([]); setPhase('running');
+    setError(null); setItems([]); setRoadmap(null); setPending(null); setLog([]); setDemo(false); setPhase('running');
     const use_cases = parseBacklog(raw);
     if (!use_cases.length) { setError('Add at least one use case.'); setPhase('idle'); return; }
     try {
@@ -137,9 +141,51 @@ export default function Home() {
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); setPhase('idle'); }
   }
 
+  // Replays a committed real run (public/demo-run.json) entirely client-side: no
+  // /api/assess call, no key, zero model spend. It animates the SAME UI states the
+  // live path streams — per-item cards, the durable gate, then the committed
+  // roadmap on approve — feeding the identical event shapes through handleEvent.
+  async function runDemo() {
+    setError(null); setItems([]); setRoadmap(null); setPending(null); setLog([]); setNote('');
+    let data: { company_context: string; items: RoadmapItem[]; summary: Record<string, number>; roadmap: Roadmap };
+    try {
+      const r = await fetch('/demo-run.json', { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      data = await r.json();
+    } catch {
+      setError('Recorded demo fixture not found — run `npm run capture:demo` (or hand-author public/demo-run.json) first.');
+      return;
+    }
+    setDemo(true);
+    setDemoData(data);
+    setRaw(DEMO);
+    setCompany(data.company_context);
+    setHitlMode('recorded demo — replaying a committed real run, 0 API calls');
+    setPhase('running');
+    setLog((l) => [...l, `supervisor routed ${data.items.length} use cases`]);
+    for (const it of data.items) {
+      await sleep(750);
+      handleEvent({ type: 'item', data: it });
+    }
+    await sleep(500);
+    handleEvent({ type: 'awaiting_approval', threadId: 'demo', data: { summary: data.summary } });
+  }
+
   async function decide(approved: boolean) {
     if (!pending) return;
     setPhase('committing');
+    if (demo) {
+      await sleep(600);
+      if (demoData) {
+        const rm = approved
+          ? demoData.roadmap
+          : { ...demoData.roadmap, items: [], approver_note: 'NOT COMMITTED — rejected at the durable gate. No roadmap was published.' };
+        handleEvent({ type: 'roadmap', data: rm });
+      } else {
+        setPhase('idle');
+      }
+      return;
+    }
     try {
       const res = await fetch('/api/resume', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -169,11 +215,19 @@ export default function Home() {
         <input className="mt-1 w-full rounded border border-stone-300 px-3 py-2 text-sm" value={company} onChange={(e) => setCompany(e.target.value)} disabled={busy} />
         <label className="mt-4 block text-sm font-medium text-stone-700">Backlog — one use case per line, <code className="text-xs">Title :: description</code></label>
         <textarea className="mt-1 h-44 w-full rounded border border-stone-300 px-3 py-2 font-mono text-xs" value={raw} onChange={(e) => setRaw(e.target.value)} disabled={busy} />
-        <div className="mt-3 flex items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <button onClick={run} disabled={busy} className="rounded bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50">
-            {phase === 'running' ? 'Triaging…' : 'Run triage'}
+            {phase === 'running' && !demo ? 'Triaging…' : 'Run triage'}
           </button>
-          {busy && <span className="text-sm text-stone-500">streaming…</span>}
+          <button onClick={runDemo} disabled={busy} title="Replays a committed real run client-side — no API key, zero model calls" className="rounded border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-800 hover:bg-stone-50 disabled:opacity-50">
+            ▶ Run recorded demo <span className="text-stone-400">· free, no key</span>
+          </button>
+          {demo && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> recorded demo · 0 API calls
+            </span>
+          )}
+          {busy && <span className="text-sm text-stone-500">{demo ? 'replaying…' : 'streaming…'}</span>}
         </div>
       </section>
 

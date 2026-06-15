@@ -2,6 +2,15 @@
 
 [![ci](https://github.com/nickbiird/authority-ladder/actions/workflows/ci.yml/badge.svg)](https://github.com/nickbiird/authority-ladder/actions/workflows/ci.yml)
 
+<!-- DEMO — drop your two Kap recordings into docs/ (demo.gif = free recorded demo, demo-live.gif = live run); set the live URL after the Vercel deploy. -->
+![authority-ladder — free recorded demo, replayed client-side with zero API calls](docs/demo.gif)
+
+<sub>**▶ The free "Run recorded demo" above** replays a real committed run client-side — no key, zero model calls. **Below: the live "Run triage" path** running the real graph on Claude.</sub>
+
+![authority-ladder — a live run on Claude (Haiku 4.5 / Sonnet 4.6)](docs/demo-live.gif)
+
+**▶ Try it for free.** The **Run recorded demo** button replays a *real* committed run entirely client-side — **no API key, zero model calls** — so you can watch the full backlog → per-item triage → durable approval gate → committed roadmap without spending a cent. The live "Run triage" path runs the real graph with your own key. **[Live demo →](https://authority-ladder.vercel.app)** _(URL set after deploy)_
+
 **Drop a backlog of candidate AI use cases in plain language; get back a defended, priced, prioritized transformation roadmap — per use case: an AI-or-not verdict, a place on the autonomy ladder, a defended architecture, an EU-AI-Act risk tier, and a cost-per-task — each one adversarially reviewed and held behind a durable human gate before anything commits. For cents, in seconds, with the eval scorecard published.**
 
 Triage, not a transformation mandate. That distinction is load-bearing and repeated throughout.

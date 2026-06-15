@@ -15,6 +15,7 @@
     "evals:retrieval": "tsx evals/retrieval.ts",
     "evals:probes": "tsx evals/probes.ts",
     "evals:record": "tsx evals/run.ts --record",
+    "capture:demo": "tsx scripts/capture-demo.ts",
     "trust-report": "tsx evals/trust-report.ts",
     "test": "tsx --test tests/*.test.ts"
   },
